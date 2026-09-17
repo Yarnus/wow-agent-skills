@@ -4,7 +4,24 @@ Composable World of Warcraft skills for agents. Each skill provides one useful c
 
 ## Status
 
-Planning only. No skills or runtime commands are implemented yet.
+The first `wcl-data` vertical slice is implemented: Report Index discovery and participant death-window queries with provenance, pagination, and display metadata. Synthetic-response tests and authorized live Report Index/death-window checks pass. Live multi-page retrieval remains unverified. Other skills and the broader first-release scope remain planned.
+
+## Use wcl-data
+
+Python 3.11+ is required; there are no third-party runtime dependencies. Configure `WCL_CLIENT_ID` and `WCL_CLIENT_SECRET` privately in the environment (or the existing `WCL_ID` / `WCL_SECRET` pair), then run:
+
+```bash
+python3 skills/wcl-data/scripts/wcl_data.py index REPORT
+python3 skills/wcl-data/scripts/wcl_data.py death-window REPORT --fight-id 7 --actor-id 10
+```
+
+Install or copy the entire `skills/wcl-data/` directory as one independent skill. It contains its own script and license and does not import repository-root modules or the old project. See [the skill instructions](skills/wcl-data/SKILL.md) for selection, coverage, error semantics, and current limitations.
+
+Run the synthetic regression and standalone-entrypoint tests:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 
 ## First release
 

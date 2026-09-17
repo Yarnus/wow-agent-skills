@@ -4,7 +4,13 @@
 
 Deliver independently usable skills with small interfaces and deep implementations. Agents compose results according to the user's goal instead of following a prescribed coaching workflow.
 
-This document describes planned work, not implemented behavior. The first release is limited to the three core skills below. Future capabilities are options, not commitments.
+This document describes the first-release target, not a claim that all listed behavior is implemented. The first release is limited to the three core skills below. Future capabilities are options, not commitments.
+
+## Implemented slice
+
+`skills/wcl-data/` currently owns a standalone Python command for completed raid Boss Attempt/participant discovery and participant death windows. Authentication, upstream queries, pagination, and Revision checks live in its single script; tests exercise the command interface with synthetic HTTP responses. No shared runtime or coaching workflow is required.
+
+The slice distinguishes window completeness from display truncation and whole-attempt coverage. It has no persistent cache, export, statistics, resume, or automatic retry support. Authorized live testing passed OAuth, Report Index discovery (two attempts), and a fight-2 death window (687 participant events, three displayed, explicit pagination termination, unchanged Revision). Live multi-page retrieval remains unverified. Regressions cover the special Environment actor `-1`, flexible raid difficulty size lists, regional report URLs, and existing credential variable names. Because actor expressions did not reliably match returned Report-local IDs, retrieval filters deaths by type upstream and actors locally; window retrieval includes all actors only within the requested time range and discloses that coverage. Review follow-up rejects malformed event actor/NPC identities and verifies that the selected death appears in the complete window before publishing evidence; regression tests and the authorized live window check pass after these changes. See [wcl-data instructions](../skills/wcl-data/SKILL.md) for the executable contract and supported source scope.
 
 ## First release
 
