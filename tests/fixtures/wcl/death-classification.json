@@ -1,0 +1,4 @@
+[
+  {"timestamp": 8000, "type": "death", "sourceID": -1, "targetID": 10, "abilityGameID": 0, "fight": 7, "feign": true},
+  {"timestamp": 12000, "type": "death", "sourceID": -1, "targetID": 10, "abilityGameID": 0, "fight": 7, "killerID": 20, "killingAbilityGameID": 1316357}
+]

@@ -19,7 +19,7 @@ def main(argv=None):
     query.add_argument('--verify-sources', action='store_true')
     query.add_argument('--branch', required=True)
     query.add_argument('--difficulty', required=True)
-    context = query.add_mutually_exclusive_group(required=True)
+    context = query.add_mutually_exclusive_group()
     context.add_argument('--build')
     context.add_argument('--patch')
     args = parser.parse_args(argv)
@@ -30,8 +30,9 @@ def main(argv=None):
         error = 'unsupported_branch'
     elif args.difficulty != 'heroic':
         error = 'difficulty_mismatch'
-    elif not re.fullmatch(r'\d+\.\d+\.\d+\.\d+' if args.build is not None else r'\d+\.\d+(?:\.\d+)?',
-                          args.build if args.build is not None else args.patch):
+    elif (args.build is not None or args.patch is not None) and not re.fullmatch(
+            r'\d+\.\d+\.\d+\.\d+' if args.build is not None else r'\d+\.\d+(?:\.\d+)?',
+            args.build if args.build is not None else args.patch):
         error = 'invalid_context'
     if error:
         print(json.dumps({'status': 'error', 'error': error, 'mechanics': []}))
@@ -48,7 +49,8 @@ def main(argv=None):
                                'requested_build': args.build, 'requested_patch': args.patch,
                                'source_build': '12.1.0.69587', 'branch': args.branch, 'difficulty': args.difficulty}
     result['status'] = 'ok' if matched else 'degraded'
-    result['error'] = None if matched else 'patch_applicability_unknown'
+    result['error'] = (None if matched else 'context_unknown'
+                       if args.build is None and args.patch is None else 'patch_applicability_unknown')
     if args.verify_sources:
         for source in result['sources']:
             try:

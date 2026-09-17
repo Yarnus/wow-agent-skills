@@ -199,6 +199,8 @@ def pages(client, identity, fight_id, start, end, expression):
                     raise DataError("Malformed event actor ID.")
             if event["type"] == "death" and type(event.get("targetID")) is not int:
                 raise DataError("Death event is missing its target actor ID.")
+            if event["type"] == "death" and "feign" in event and type(event["feign"]) is not bool:
+                raise DataError("Malformed death event feign flag; expected a boolean when present.")
             matches = not expression or event["type"] == "death"
             if not matches or (events and event["timestamp"] < events[-1]["timestamp"]):
                 raise DataError("Event identity/filter mismatch or unordered events.")
@@ -225,6 +227,12 @@ def death_window(client, code, args):
     deaths, death_pagination = pages(client, result["identity"], args.fight_id, fight["start_ms"],
                                     fight["end_ms"], "type = 'death'")
     deaths = [event for event in deaths if event.get("targetID") == args.actor_id]
+    excluded_feign = sum(event.get("feign") is True for event in deaths)
+    missing_feign = sum("feign" not in event for event in deaths)
+    deaths = [event for event in deaths if event.get("feign") is not True]
+    result["death_classification"] = {
+        "candidate_count": len(deaths), "excluded_feign_count": excluded_feign,
+        "missing_feign_count": missing_feign, "policy": "exclude_explicit_true"}
     result["deaths"] = [{"death": i + 1, "timestamp": event["timestamp"]} for i, event in enumerate(deaths)]
     if not deaths or (len(deaths) > 1 and args.death is None):
         check_revision(client, code, result["identity"]["report_revision"])
@@ -242,7 +250,8 @@ def death_window(client, code, args):
     events, pagination = pages(client, result["identity"], args.fight_id, *actual, "")
     events = [event for event in events if args.actor_id in (event.get("sourceID"), event.get("targetID"))]
     if not any(event["type"] == "death" and event["timestamp"] == selected["timestamp"]
-               and event.get("targetID") == args.actor_id for event in events):
+               and event.get("targetID") == args.actor_id and event.get("feign") is not True
+               for event in events):
         raise DataError("Selected death is missing from the retrieved event window.")
     check_revision(client, code, result["identity"]["report_revision"])
     referenced = {args.actor_id}

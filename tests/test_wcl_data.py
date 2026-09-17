@@ -59,6 +59,71 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn("secret-", output.getvalue())
         return status, json.loads(output.getvalue())
 
+    def test_observed_feign_is_excluded_before_automatic_death_selection(self):
+        deaths = json.loads((Path(__file__).parent / 'fixtures/wcl/death-classification.json').read_text())
+        def page(events):
+            return {'code': 'AbC123', 'revision': 2, 'events': {'data': events, 'nextPageTimestamp': None}}
+        status, result = self.invoke(
+            ['death-window', 'AbC123', '--fight-id', '7', '--actor-id', '10'],
+            [report(), {'code': 'AbC123', 'revision': 2}, page(deaths),
+             page(deaths), {'code': 'AbC123', 'revision': 2}])
+        self.assertEqual(status, 0)
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(result['deaths'], [{'death': 1, 'timestamp': 12000}])
+        self.assertEqual(result['death'], deaths[1])
+        self.assertEqual(result['death_classification'], {
+            'candidate_count': 1, 'excluded_feign_count': 1,
+            'missing_feign_count': 1, 'policy': 'exclude_explicit_true'})
+        self.assertEqual(result['events'], deaths)
+
+    def test_feign_classification_selection_and_invalid_fields(self):
+        first = {'timestamp': 8000, 'type': 'death', 'targetID': 10}
+        fake = first | {'timestamp': 10000, 'feign': True}
+        second = first | {'timestamp': 12000, 'feign': False}
+        revision = {'code': 'AbC123', 'revision': 2}
+        def page(events):
+            return revision | {'events': {'data': events, 'nextPageTimestamp': None}}
+        args = ['death-window', 'AbC123', '--fight-id', '7', '--actor-id', '10']
+        code, result = self.invoke(args, [report(), revision, page([fake]), revision])
+        self.assertEqual((code, result['status']), (0, 'no_death'))
+        self.assertEqual(result['deaths'], [])
+        self.assertEqual(result['death_classification']['excluded_feign_count'], 1)
+        self.assertEqual(result['death_classification']['candidate_count'], 0)
+        for extra, expected in [([], 'needs_selection'), (['--death', '2'], 'ok')]:
+            replies = [report(), revision, page([first, fake, second])]
+            if extra:
+                replies.append(page([first, fake, second]))
+            code, result = self.invoke(args + extra, replies + [revision])
+            self.assertEqual((code, result['status']), (0, expected))
+            self.assertEqual(result['deaths'], [{'death': 1, 'timestamp': 8000},
+                                                {'death': 2, 'timestamp': 12000}])
+            self.assertEqual(result['death_classification']['missing_feign_count'], 1)
+            if extra:
+                self.assertEqual(result['death'], second)
+        for value in [None, 0, 1, 'true', 'false', [], {}]:
+            for stage in ['search', 'window']:
+                with self.subTest(value=value, stage=stage):
+                    malformed = first | {'feign': value}
+                    replies = [report(), revision, page([malformed]), page([malformed])]
+                    if stage == 'window':
+                        replies = [report(), revision, page([first]), page([malformed])]
+                    code, result = self.invoke(args, replies + [revision])
+                    self.assertEqual((code, result['status']), (1, 'error'))
+                    self.assertIn('feign', result['error'])
+                    self.assertNotIn('deaths', result)
+                    self.assertFalse(result['coverage']['query_complete'])
+
+    def test_window_feign_cannot_substitute_for_selected_death(self):
+        death = {'timestamp': 8000, 'type': 'death', 'targetID': 10}
+        revision = {'code': 'AbC123', 'revision': 2}
+        def page(event):
+            return revision | {'events': {'data': [event], 'nextPageTimestamp': None}}
+        code, result = self.invoke(
+            ['death-window', 'AbC123', '--fight-id', '7', '--actor-id', '10'],
+            [report(), revision, page(death), page(death | {'feign': True}), revision])
+        self.assertEqual(code, 1)
+        self.assertFalse(result['coverage']['query_complete'])
+
     def test_index_lists_only_completed_raid_attempts_and_their_players(self):
         data = report()
         data["fights"] += [data["fights"][0] | {"id": 8, "encounterID": 0},

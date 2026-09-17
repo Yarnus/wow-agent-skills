@@ -8,7 +8,7 @@
   },
   "coverage": {
     "complete_encounter": false,
-    "mechanic_count": 3
+    "mechanic_count": 6
   },
   "sources": [
     {
@@ -24,12 +24,19 @@
         "ID",
         "JournalEncounterID",
         "SpellID",
-        "BodyText_lang"
+        "BodyText_lang",
+        "ParentSectionID",
+        "DifficultyMask"
       ],
       "row_hashes": {
-        "36999": "85a436415d5de8c566201034e427b00751bfd18530ec7b5aa354fb3c53021a2c",
-        "37004": "a5b452429f05680727b30690a7199b5c05909a403e2b235e0d8d8acf1aed5679",
-        "37254": "b182e72483735efc06451f11303970aefc498ca597be09d237fa3e0055066bbc"
+        "36999": "81cd86e6d53969dac522c8125c48e72a994592eadba85c66a61a6269525d15c8",
+        "37004": "33b686f3ac3ec3860d320f02e8374f0e43ead762314417cce9f318ef03302666",
+        "37254": "dd04e00be5a2a32f0b3b25ff19d132ed406c442fd2b217ceda1e3e82ebcd19e2",
+        "35565": "cff11052416736311d64d841eb135e642d31a9a571413c1711216fc1ff3dda3e",
+        "36739": "4b88b3d10ff235d4ee4572755f024d9b91525bf0bef4684782d975e6e886b2cd",
+        "36284": "745a474113a7604dc93969e9d9426362e7d85626e7f82844f6b3723087574e4f",
+        "37031": "4fbd35f9eba076168d217aaa70a8bcc05ffc53089544d0e8607fcf7aa509ddd2",
+        "37034": "eff9f723e365649bf1fcaea013a787c23839df448a8175df7564e22e6ff70531"
       }
     },
     {
@@ -49,7 +56,8 @@
       "row_hashes": {
         "19118": "6d902c70c30b4865c3aed06ecde4a62aa163062d0b09ffe3a8bab97cb0c4a50f",
         "19123": "d1654c8ee469bcc7bd1230a543c2008613824632396bcf9d0133766087b2b61c",
-        "19364": "e4c033c610d30e8d080d905379b50f3074bf1de9d81f228aa8cdf0c732dc41fb"
+        "19364": "e4c033c610d30e8d080d905379b50f3074bf1de9d81f228aa8cdf0c732dc41fb",
+        "19141": "be261e687c4f54bed5a196efd46cf4f0ccb73438b05759392a4c1ebc711da630"
       }
     },
     {
@@ -65,6 +73,32 @@
         "For Heroic:",
         "Team 1 takes 1/3/5 and Team 2 takes 2/4/6."
       ]
+    },
+    {
+      "id": "spell-text",
+      "url": "https://wago.tools/db2/Spell/csv?build=12.1.0.69587",
+      "kind": "game_data_third_party_host",
+      "build": "12.1.0.69587",
+      "reviewed_on": "2026-09-17",
+      "verification": "reviewed_snapshot",
+      "redistribution_permission": "unknown",
+      "table": "Spell",
+      "fields": [
+        "ID",
+        "Description_lang",
+        "AuraDescription_lang"
+      ],
+      "row_hashes": {
+        "1286860": "188ba0af3d01122c13ae38326ee9dfb2ebc079979b5a4112bdea21237932509a",
+        "1286885": "cdabf847c2ba1ebc412909088321584879e14890f33b13637d619db34a9e6ee7",
+        "1302982": "ee499941291c1c8bead0d1e9faee257f16ecbaac8a916c018c778615a38e5c49",
+        "1295905": "ab67247de0a01d0d570ad3a75ae4115c3127a957cc4e00d4f7252ebcc640e291",
+        "1306086": "52a71b7e30397c6e1bc9429b04670a99232ea35c7e4c978274cd9c653d324042",
+        "1305878": "b1532488fb7f2e48d03d1e7dab5e9f786883a918498da7c6903a2ac872aefb72",
+        "1316357": "45d80eda60d7bdb750ca4e3d7ea5c4b9d15dfa26425fb7d89889ee62752dd8b6",
+        "1312967": "0908d0d7143543413834b1747e752eb074d0b0c1ba5cebf5dcee39f0c6e22dec",
+        "1316356": "6bbe7cb93304230bf5dc1715b39eaaa1e8a40376a29a9534a89f1a94c6f42fe4"
+      }
     }
   ],
   "mechanics": [
@@ -221,15 +255,210 @@
           "text": "Look for these candidate IDs in abilityGameID in an available participant death window. Validate event types and spell variants against actual evidence; absence in this window is not absence in the encounter."
         }
       ]
+    },
+    {
+      "id": "falling-debris",
+      "name": "Falling Debris / Rage of the Shackled",
+      "scope": {
+        "branch": "retail",
+        "difficulty": "heroic",
+        "build": "12.1.0.69587",
+        "live_hotfix_applicability": "unknown",
+        "difficulty_basis": "observed_heroic; journal_inheritance_unverified"
+      },
+      "fact": {
+        "kind": "source_statement",
+        "text": "Rage of the Shackled causes Falling Debris at random destinations; debris inflicts Nature damage near impact locations. This is a child effect, not an independent encounter mechanic.",
+        "sources": [
+          "journal",
+          "spell-text"
+        ],
+        "journal_section_id": 36739,
+        "spell_ids": [
+          1286860,
+          1286885
+        ],
+        "parent_spell_id": 1286860
+      },
+      "strategies": [],
+      "signals": [
+        {
+          "kind": "inferred_signal",
+          "role": "impact",
+          "spell_ids": [
+            1286885
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "damage"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "spell-text"
+          ],
+          "text": "Damage observed in a Heroic death window; this alone does not establish positioning, avoidability or the upstream cast."
+        }
+      ]
+    },
+    {
+      "id": "virulent-spit",
+      "name": "Virulent Spit",
+      "scope": {
+        "branch": "retail",
+        "difficulty": "heroic",
+        "build": "12.1.0.69587",
+        "live_hotfix_applicability": "unknown",
+        "difficulty_basis": "observed_heroic; journal_inheritance_unverified"
+      },
+      "fact": {
+        "kind": "source_statement",
+        "text": "Ula'tek spits venom at several destinations, dealing Nature damage near impact locations. The journal places this spell under Stage Two; an unknown-build event alone cannot prove phase.",
+        "sources": [
+          "journal",
+          "spell-text"
+        ],
+        "journal_section_id": 36284,
+        "spell_ids": [
+          1302982
+        ]
+      },
+      "strategies": [],
+      "signals": [
+        {
+          "kind": "inferred_signal",
+          "role": "impact",
+          "spell_ids": [
+            1302982
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "damage"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "spell-text"
+          ],
+          "text": "Damage observed in a Heroic death window. Consecutive hits do not independently prove overlapping destinations or player fault."
+        }
+      ]
+    },
+    {
+      "id": "volatile-purge",
+      "name": "Serpent's Bite / Volatile Purge",
+      "scope": {
+        "branch": "retail",
+        "difficulty": "heroic",
+        "build": "12.1.0.69587",
+        "live_hotfix_applicability": "unknown",
+        "difficulty_basis": "child_of_explicit_heroic_section"
+      },
+      "fact": {
+        "kind": "source_statement",
+        "text": "Players leeching Serpent's Bite venom become affected by Volatile Purge. On expiration it erupts, inflicting impact and additional periodic Nature damage near the purge; the effect stacks. The source links impact to 1305878, periodic damage to 1316357, pre-expiration context to 1312967, and periodic aura context to 1316356. Numerical tokens remain unresolved.",
+        "sources": [
+          "journal",
+          "difficulty",
+          "spell-text"
+        ],
+        "journal_section_id": 37034,
+        "spell_ids": [
+          1295905,
+          1306086
+        ],
+        "difficulty_association_id": 19141,
+        "difficulty_section_id": 37031
+      },
+      "strategies": [
+        {
+          "kind": "strategy",
+          "origin": "author_recommendation",
+          "text": "Inspect separate impact, periodic damage and aura histories before recommending spacing changes; leeching itself can be an intended action, not a failure.",
+          "sources": [
+            "spell-text"
+          ],
+          "build_applicability": "same_as_fact"
+        }
+      ],
+      "signals": [
+        {
+          "kind": "inferred_signal",
+          "role": "impact",
+          "spell_ids": [
+            1305878
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "damage"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "spell-text"
+          ],
+          "text": "Role follows explicit spell-text references; listed event types were observed in scoped Heroic windows. Aura removal does not prove natural expiration or a dispel; these signals do not identify who overlapped whom or establish a failed soak."
+        },
+        {
+          "kind": "inferred_signal",
+          "role": "periodic_damage",
+          "spell_ids": [
+            1316357
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "damage"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "spell-text"
+          ],
+          "text": "Role follows explicit spell-text references; listed event types were observed in scoped Heroic windows. Aura removal does not prove natural expiration or a dispel; these signals do not identify who overlapped whom or establish a failed soak."
+        },
+        {
+          "kind": "inferred_signal",
+          "role": "pre_expiration_aura",
+          "spell_ids": [
+            1312967
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "applydebuff",
+            "removedebuff"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "spell-text"
+          ],
+          "text": "Role follows explicit spell-text references; listed event types were observed in scoped Heroic windows. Aura removal does not prove natural expiration or a dispel; these signals do not identify who overlapped whom or establish a failed soak."
+        },
+        {
+          "kind": "inferred_signal",
+          "role": "periodic_aura",
+          "spell_ids": [
+            1316356
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "applydebuff",
+            "removedebuff"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "spell-text"
+          ],
+          "text": "Role follows explicit spell-text references; listed event types were observed in scoped Heroic windows. Aura removal does not prove natural expiration or a dispel; these signals do not identify who overlapped whom or establish a failed soak."
+        }
+      ]
     }
   ],
   "conflicts": [],
   "knowledge_gaps": [
-    "Only three Heroic mechanic claims are covered; phases, numerical effects, timers and full strategy are not covered.",
+    "Six bounded entries are covered, including child effects and multiple spell variants, not six independent mechanics or a complete encounter. Numerical effects and full strategies remain unsupported.",
     "Source build is a snapshot, not proof of live server hotfix state or report applicability.",
     "Detection rules remain hypotheses. In report pvQqzXGjykc1Rt8V, Revision 3, fight 2, actor 35, window [6446268, 7025007] ms, 1287265 damage and 1300685/1287036 debuff application/removal were observed; this does not establish causality or general detection validity. A separate full-fight filtered API probe returned no 1303414 events; its mapping remains unverified, not disproved.",
     "WCL currently supports participant death windows, not arbitrary full-raid mechanic queries.",
     "Icy Veins exact build applicability and source redistribution permissions are not established.",
-    "Source conflicts outside the reviewed claims have not been exhaustively investigated."
+    "Source conflicts outside the reviewed claims have not been exhaustively investigated.",
+    "Falling Debris and Virulent Spit have no direct Heroic difficulty association in the reviewed journal; their generic tooltip facts and observed Heroic events do not establish a general journal-inheritance rule.",
+    "Volatile Purge is under an explicitly Heroic-associated parent, not directly difficulty-tagged itself. The Mythic-only Caustic Waves-on-expiration clause is not imported into Heroic knowledge.",
+    "Report build is unknown. Spell-text links support candidate roles, not verified event triggers, responsibility, spatial overlap, or upstream death causality."
   ]
 }

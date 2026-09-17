@@ -1,0 +1,2 @@
+# Source excerpts preserve significant whitespace inside quoted CSV cells.
+tests/fixtures/mechanics/*.csv whitespace=-blank-at-eol

@@ -4,7 +4,7 @@ Composable World of Warcraft skills for agents. Each skill provides one useful c
 
 ## Status
 
-Three bounded vertical slices are implemented: `wcl-data` Report Index discovery and participant death windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with three sourced Heroic Ula'tek claims from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and live source checks pass. Live multi-page retrieval and three-skill composition passed for one authorized Heroic Ula'tek participant window; see [live verification](docs/mechanics-live-verification.md). Full encounter mechanics and broader first-release capabilities remain outside these slices.
+Three bounded vertical slices are implemented: `wcl-data` Report Index discovery and participant death windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with six bounded Ula'tek knowledge entries for Heroic investigation from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and live source checks pass. Live multi-page retrieval and three-skill composition passed for one authorized Heroic Ula'tek participant window; see [live verification](docs/mechanics-live-verification.md). Full encounter mechanics and broader first-release capabilities remain outside these slices. Subsequent real acceptance exposed false death candidates from feigns and a blocked unknown-version mechanics query; see [P1 fixes and verification](docs/p1-acceptance-fixes.md).
 
 ## Use wcl-data
 
@@ -16,6 +16,8 @@ python3 skills/wcl-data/scripts/wcl_data.py death-window REPORT --fight-id 7 --a
 ```
 
 Install or copy the entire `skills/wcl-data/` directory as one independent skill. It contains its own script and license and does not import repository-root modules or the old project. See [the skill instructions](skills/wcl-data/SKILL.md) for selection, coverage, error semantics, and current limitations.
+
+Death candidates exclude explicit `feign=true` events before numbering and selection. Inspect `death_classification` for eligible, excluded-feign and missing-flag counts; original window events remain unchanged. See the skill contract for malformed flags and `no_death` semantics.
 
 Run the synthetic regression and standalone-entrypoint tests:
 
@@ -57,6 +59,10 @@ Join `names.json` for display only; do not rewrite `window.json`. WCL currently 
 Install the entire `skills/wow-mechanics/` directory. Python 3.11+ is required; no dependencies, network or WCL credentials are required for default snapshot queries.
 
 ```bash
+# Unknown report version: returns scoped knowledge with exit 1 / degraded.
+python3 skills/wow-mechanics/scripts/wow_mechanics.py query ulatek \
+  --branch retail --difficulty heroic
+# Supply a patch only when known:
 python3 skills/wow-mechanics/scripts/wow_mechanics.py query ulatek \
   --branch retail --difficulty heroic --patch 12.1
 # Exact reviewed build; optionally recheck fixed upstream sources:
@@ -64,7 +70,7 @@ python3 skills/wow-mechanics/scripts/wow_mechanics.py query ulatek \
   --branch retail --difficulty heroic --build 12.1.0.69587 --verify-sources
 ```
 
-Patch-only queries deliberately return exit 1 / `degraded`: exact build applicability is unknown. They retain clearly scoped historical knowledge. Do not replace an unknown report build with the example build to suppress this warning. The snapshot covers only Spectral Coils/Soul Constrictor, Poisonous Bite and Petrifying Sting, not the complete encounter.
+Unknown-version queries return exit 1 / `degraded` with `context_unknown` and null requested versions, retaining the actual snapshot build and sources. Patch-only queries deliberately return exit 1 / `degraded`: exact build applicability is unknown. They retain clearly scoped historical knowledge. Do not replace an unknown report build with the example build to suppress this warning. The snapshot covers Spectral Coils/Soul Constrictor, Poisonous Bite, Petrifying Sting, Falling Debris, Virulent Spit and Serpent's Bite / Volatile Purge, not the complete encounter. Entries include child effects and distinct spell variants; direct versus inherited/unknown difficulty support remains explicit. See [death-mechanics sources](docs/death-mechanics-source-research.md) and [bounded replay](docs/death-mechanics-verification.md).
 
 For composition, an agent can use candidate signal IDs to inspect an existing `wcl-data death-window` result, then send observed Spell IDs to `wow-localization`. There is no new workflow command, general raid-event query, or evidence rewrite. See [the skill contract](skills/wow-mechanics/SKILL.md) and [source/verification notes](docs/mechanics-source-research.md).
 

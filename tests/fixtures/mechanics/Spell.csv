@@ -1,0 +1,21 @@
+ID,Description_lang,AuraDescription_lang
+1286860,"Ula'tek rages, inflicting $1307367s1 Nature damage every $t1 sec to all players for $d and causing $@spellname1286885 to impact several random destinations.
+
+Flying into this rage exposes Ula'tek's $@spellname1299526.
+",
+1286885,"Falling debris drops onto several random destinations, inflicting $s1 Nature damage to players within $a1 yards of the impact locations.",
+1295905,"Ula'tek shoots fangs into several players, applying a venom that inflicts $1295838s1 Nature damage on impact and an additional $1293146s1 Nature damage every $1288879t1 sec for $1288879d. Upon expiration, the player is turned into a $@spellname1306119.
+
+Players within $1313420a1 yards may leech the venom to remove it but become infected with $@spellname1306086.",
+1302982,"Ula'tek spits venom at several destinations, inflicting $s1 Nature damage to players within $a1 yards of the impact locations.",
+1305878,$@spelldesc1306086,
+1306086,"Players that leech $@spellname1288879 purge their venom after $1312967d. On expiration, the poison erupts from the affected players, inflicting $1305878s1 Nature damage on impact and an additional $1316357s1 Nature damage every $1316356t1 sec for $1316356d to players near the purge. This effect stacks.
+
+In addition, $@spellname1306086 increases damage taken from $@spellname1315732 by $1312967s1%.
+",
+1312967,"$@spelldesc1306086
+","You'll $@spellname1306086 on expiration!
+Damage taken from $@spellname1315732 increased by $s1%."
+1316356,$@spelldesc1306086,"Inflicts $1316357s1 Nature damage every $t1 sec.
+Damage taken from $@spellname1315732 increased by $s2%."
+1316357,$@spelldesc1306086,

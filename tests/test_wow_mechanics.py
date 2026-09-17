@@ -30,7 +30,7 @@ class CommandTests(unittest.TestCase):
     def sources(self, mode='ok'):
         def respond(request, **kwargs):
             table = request.full_url.split('/db2/')[-1].split('/')[0]
-            if table in {'JournalEncounterSection', 'JournalSectionXDifficulty'}:
+            if table in {'JournalEncounterSection', 'JournalSectionXDifficulty', 'Spell'}:
                 body = (Path(__file__).parent / 'fixtures/mechanics' / (table + '.csv')).read_text()
                 if mode == 'crlf':
                     body = body.replace('\n', '\r\n')
@@ -58,6 +58,49 @@ class CommandTests(unittest.TestCase):
             return response
         return respond
 
+    def test_unknown_version_cli_returns_degraded_snapshot(self):
+        result = subprocess.run([sys.executable, str(SCRIPT), *ARGS[:-2]],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        knowledge = json.loads(result.stdout)
+        self.assertEqual(knowledge['status'], 'degraded')
+        self.assertEqual(knowledge['error'], 'context_unknown')
+        self.assertEqual(knowledge['applicability']['status'], 'unknown')
+        self.assertIsNone(knowledge['applicability']['requested_build'])
+        self.assertIsNone(knowledge['applicability']['requested_patch'])
+        self.assertEqual(knowledge['applicability']['source_build'], '12.1.0.69587')
+        self.assertEqual(len(knowledge['mechanics']), 6)
+        self.assertTrue(knowledge['sources'])
+        self.assertTrue(knowledge['knowledge_gaps'])
+
+    def test_death_related_effects_have_scoped_sources_and_distinct_signal_roles(self):
+        code, result = self.invoke(ARGS[:-2])
+        self.assertEqual((code, result['error']), (1, 'context_unknown'))
+        entries = {m['id']: m for m in result['mechanics']}
+        self.assertTrue({'falling-debris', 'virulent-spit', 'volatile-purge'} <= entries.keys())
+        self.assertEqual(result['coverage']['mechanic_count'], 6)
+        self.assertFalse(result['coverage']['complete_encounter'])
+        sources = {s['id']: s for s in result['sources']}
+        for key in ['falling-debris', 'virulent-spit', 'volatile-purge']:
+            m = entries[key]
+            self.assertEqual(m['scope']['difficulty'], 'heroic')
+            self.assertEqual(m['scope']['build'], '12.1.0.69587')
+            self.assertIn('spell-text', m['fact']['sources'])
+            for claim in [m['fact'], *m['strategies'], *m['signals']]:
+                self.assertTrue(set(claim['sources']) <= sources.keys())
+            self.assertTrue(all(not s['verified_detection_rule'] for s in m['signals']))
+        self.assertEqual(entries['falling-debris']['fact']['parent_spell_id'], 1286860)
+        self.assertEqual(entries['falling-debris']['scope']['difficulty_basis'], 'observed_heroic; journal_inheritance_unverified')
+        self.assertEqual(entries['virulent-spit']['scope']['difficulty_basis'], 'observed_heroic; journal_inheritance_unverified')
+        purge = entries['volatile-purge']
+        self.assertEqual(purge['fact']['journal_section_id'], 37034)
+        self.assertEqual(purge['fact']['difficulty_association_id'], 19141)
+        self.assertEqual(purge['fact']['difficulty_section_id'], 37031)
+        self.assertEqual({s['role']: s['spell_ids'] for s in purge['signals']}, {
+            'impact': [1305878], 'periodic_damage': [1316357],
+            'pre_expiration_aura': [1312967], 'periodic_aura': [1316356]})
+        self.assertIn('Mythic', ' '.join(result['knowledge_gaps']))
+
     def test_source_verification_checks_content_missing_conflicts_and_build(self):
         code, result = self.invoke(ARGS + ['--verify-sources'], self.sources())
         self.assertEqual(code, 0)
@@ -82,6 +125,24 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn('36999', result['conflicts'][0]['row_ids'])
         self.assertTrue(all(m['fact']['verification'] == 'unverified' for m in result['mechanics']))
 
+    def test_changed_spell_roles_are_not_freshly_verified(self):
+        def changed(request, **kwargs):
+            response = self.sources()(request, **kwargs)
+            if '/Spell/' in request.full_url:
+                body = response.getvalue().replace(b'$1305878s1', b'$999999s1')
+                altered = io.BytesIO(body)
+                altered.headers = response.headers
+                return altered
+            return response
+        code, result = self.invoke(ARGS[:-2] + ['--verify-sources'], changed)
+        self.assertEqual((code, result['error']), (1, 'source_verification_failed'))
+        self.assertEqual(result['applicability']['status'], 'unknown')
+        self.assertTrue(any(c['source'] == 'spell-text' and '1306086' in c['row_ids']
+                            for c in result['conflicts']))
+        purge = next(m for m in result['mechanics'] if m['id'] == 'volatile-purge')
+        self.assertEqual(purge['fact']['verification'], 'unverified')
+        self.assertTrue(all(s['verification'] == 'unverified' for s in purge['signals']))
+
     def test_source_failure_is_not_a_verified_snapshot(self):
         code, result = self.invoke(ARGS + ['--verify-sources'], OSError('private upstream body'))
         self.assertEqual(code, 1)
@@ -89,6 +150,25 @@ class CommandTests(unittest.TestCase):
         self.assertTrue(all(s['verification'] == 'fetch_failed' for s in result['sources']))
         self.assertNotIn('private upstream', json.dumps(result))
         self.assertTrue(all(m['fact']['verification'] == 'unverified' for m in result['mechanics']))
+
+    def test_unknown_context_keeps_source_checks_and_errors_distinct(self):
+        for reply, expected in [(self.sources(), 'context_unknown'),
+                                (OSError('offline'), 'source_verification_failed')]:
+            code, result = self.invoke(ARGS[:-2] + ['--verify-sources'], reply)
+            self.assertEqual((code, result['status'], result['error']), (1, 'degraded', expected))
+            self.assertEqual(result['applicability']['status'], 'unknown')
+            self.assertIsNone(result['applicability']['requested_build'])
+        for boss, branch, difficulty, error in [
+                ('other', 'retail', 'heroic', 'unsupported_identity'),
+                ('ulatek', 'classic', 'heroic', 'unsupported_branch'),
+                ('ulatek', 'retail', 'normal', 'difficulty_mismatch')]:
+            code, result = self.invoke(['query', boss, '--branch', branch, '--difficulty', difficulty])
+            self.assertEqual((code, result['status'], result['error']), (1, 'error', error))
+            self.assertEqual(result['mechanics'], [])
+        for extra in [['--patch'], ['--patch', '12.1', '--build', '12.1.0.69587']]:
+            result = subprocess.run([sys.executable, str(SCRIPT), *ARGS[:-2], *extra],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
 
     def test_empty_context_returns_structured_error(self):
         for flag in ('--build', '--patch'):

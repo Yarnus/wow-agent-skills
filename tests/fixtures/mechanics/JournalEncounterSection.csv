@@ -1,10 +1,17 @@
-ID,JournalEncounterID,SpellID,BodyText_lang
+ID,JournalEncounterID,SpellID,BodyText_lang,ParentSectionID,DifficultyMask
+35565,2895,1286860,,35561,-1
+36284,2895,1302982,,36171,-1
+36739,2895,1286885,,35565,-1
 36999,2895,0,"Broken from their shells early, the Blightscale Rawling struggles to survive.
 
-$[!15 On Heroic difficulty, Blightscale Rawlings cast |cFF2959D3|Hspell:1287036|h[Poisonous Bite]|h|r on players."
+$[!15 On Heroic difficulty, Blightscale Rawlings cast |cFF2959D3|Hspell:1287036|h[Poisonous Bite]|h|r on players.",36995,0
 37004,2895,0,"Fully gestated, the Blightscale Viper is a lethal predator.
 
-$[!15 On Heroic difficulty, Blightscale Vipers cast |cFF2959D3|Hspell:1303414|h[Petrifying Sting]|h|r on players."
+$[!15 On Heroic difficulty, Blightscale Vipers cast |cFF2959D3|Hspell:1303414|h[Petrifying Sting]|h|r on players.",36995,0
+37031,2895,1295905,"$[!15 
+
+On Heroic difficulty, |cFF2959D3|Hspell:1306119|h[Calcified Corpse]|h|r radiates damage to all players.",36323,0
+37034,2895,1306086,,37031,-1
 37254,2895,1287265,"$[!15
 
-On Heroic difficulty, Ula'tek casts |cFF2959D3|Hspell:1300685|h[Soul Constrictor]|h|r on players that mitigate Spectral Coil's damage."
+On Heroic difficulty, Ula'tek casts |cFF2959D3|Hspell:1300685|h[Soul Constrictor]|h|r on players that mitigate Spectral Coil's damage.",36320,0
