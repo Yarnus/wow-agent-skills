@@ -18,6 +18,12 @@ The slice distinguishes window completeness from display truncation and whole-at
 
 TDD command regressions, independent copied-skill execution, synthetic WCL Spell ID composition, and live Wago default/pinned-build queries and cache reuse pass. Live WCL-to-localization composition remains unverified. Default upstream builds are not asserted to be current Retail releases; snapshot completeness has no authoritative row-count guarantee. See [usage and result semantics](../skills/wow-localization/SKILL.md) and [source/reuse/verification notes](localization-verification.md).
 
+### Mechanics slice
+
+`skills/wow-mechanics/` provides standalone offline snapshot queries for Retail Heroic Ula'tek, with three reviewed claims at build 12.1.0.69587. Facts, secondary/author strategies and inferred signals remain distinct. Patch-only or other-build applicability is unknown. Optional fixed-source rechecks disclose missing content, build mismatch, transport failure and unresolved snapshot changes; they do not automatically update knowledge. No full encounter coverage, generic source framework or mechanic-rule DSL was added.
+
+Command-level TDD regressions, copied-skill execution and synthetic mechanics → WCL death-window → localization composition pass without rewriting evidence. Live Wago row/build verification and the cited Icy Veins strategy passage check pass. Live report composition and general full-raid event querying remain unavailable/unverified. See [mechanics source notes](mechanics-source-research.md) for terms, exact source coverage and limitations.
+
 ## First release
 
 ### 1. wcl-data

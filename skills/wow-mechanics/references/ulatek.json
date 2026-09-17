@@ -1,0 +1,235 @@
+{
+  "status": "ok",
+  "identity": {
+    "name": "Ula'tek",
+    "journal_encounter_id": 2895,
+    "dungeon_encounter_id": 3492,
+    "raid": "The Venomous Abyss"
+  },
+  "coverage": {
+    "complete_encounter": false,
+    "mechanic_count": 3
+  },
+  "sources": [
+    {
+      "id": "journal",
+      "url": "https://wago.tools/db2/JournalEncounterSection/csv?build=12.1.0.69587",
+      "kind": "game_data_third_party_host",
+      "build": "12.1.0.69587",
+      "reviewed_on": "2026-09-17",
+      "verification": "reviewed_snapshot",
+      "redistribution_permission": "unknown",
+      "table": "JournalEncounterSection",
+      "fields": [
+        "ID",
+        "JournalEncounterID",
+        "SpellID",
+        "BodyText_lang"
+      ],
+      "row_hashes": {
+        "36999": "85a436415d5de8c566201034e427b00751bfd18530ec7b5aa354fb3c53021a2c",
+        "37004": "a5b452429f05680727b30690a7199b5c05909a403e2b235e0d8d8acf1aed5679",
+        "37254": "b182e72483735efc06451f11303970aefc498ca597be09d237fa3e0055066bbc"
+      }
+    },
+    {
+      "id": "difficulty",
+      "url": "https://wago.tools/db2/JournalSectionXDifficulty/csv?build=12.1.0.69587",
+      "kind": "game_data_third_party_host",
+      "build": "12.1.0.69587",
+      "reviewed_on": "2026-09-17",
+      "verification": "reviewed_snapshot",
+      "redistribution_permission": "unknown",
+      "table": "JournalSectionXDifficulty",
+      "fields": [
+        "ID",
+        "DifficultyID",
+        "JournalEncounterSectionID"
+      ],
+      "row_hashes": {
+        "19118": "6d902c70c30b4865c3aed06ecde4a62aa163062d0b09ffe3a8bab97cb0c4a50f",
+        "19123": "d1654c8ee469bcc7bd1230a543c2008613824632396bcf9d0133766087b2b61c",
+        "19364": "e4c033c610d30e8d080d905379b50f3074bf1de9d81f228aa8cdf0c732dc41fb"
+      }
+    },
+    {
+      "id": "icy-veins",
+      "url": "https://www.icy-veins.com/wow/ulatek-raid-guide",
+      "kind": "secondary_strategy",
+      "build": null,
+      "updated_on": "2026-09-04",
+      "reviewed_on": "2026-09-17",
+      "verification": "reviewed_snapshot",
+      "redistribution_permission": "not_established",
+      "required_passages": [
+        "For Heroic:",
+        "Team 1 takes 1/3/5 and Team 2 takes 2/4/6."
+      ]
+    }
+  ],
+  "mechanics": [
+    {
+      "id": "spectral-coils",
+      "name": "Spectral Coils / Soul Constrictor",
+      "scope": {
+        "branch": "retail",
+        "difficulty": "heroic",
+        "build": "12.1.0.69587",
+        "live_hotfix_applicability": "unknown"
+      },
+      "fact": {
+        "kind": "source_statement",
+        "text": "On Heroic, players who mitigate Spectral Coils damage are targeted by Soul Constrictor.",
+        "sources": [
+          "journal",
+          "difficulty"
+        ],
+        "journal_section_id": 37254,
+        "difficulty_association_id": 19364
+      },
+      "strategies": [
+        {
+          "kind": "strategy",
+          "origin": "secondary_guide",
+          "text": "Alternate two assigned soak groups during the intermission.",
+          "sources": [
+            "icy-veins"
+          ],
+          "build_applicability": "unknown"
+        }
+      ],
+      "signals": [
+        {
+          "kind": "inferred_signal",
+          "spell_ids": [
+            1287265,
+            1300685
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "damage",
+            "applydebuff",
+            "removedebuff",
+            "cast"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "journal"
+          ],
+          "text": "Look for these candidate IDs in abilityGameID in an available participant death window. Validate event types and spell variants against actual evidence; absence in this window is not absence in the encounter."
+        }
+      ]
+    },
+    {
+      "id": "poisonous-bite",
+      "name": "Poisonous Bite",
+      "scope": {
+        "branch": "retail",
+        "difficulty": "heroic",
+        "build": "12.1.0.69587",
+        "live_hotfix_applicability": "unknown"
+      },
+      "fact": {
+        "kind": "source_statement",
+        "text": "On Heroic, Blightscale Rawlings cast Poisonous Bite on players.",
+        "sources": [
+          "journal",
+          "difficulty"
+        ],
+        "journal_section_id": 36999,
+        "difficulty_association_id": 19118
+      },
+      "strategies": [
+        {
+          "kind": "strategy",
+          "origin": "author_recommendation",
+          "text": "Inspect the affected participant's damage and aura history before recommending defensive changes.",
+          "sources": [
+            "journal"
+          ],
+          "build_applicability": "same_as_fact"
+        }
+      ],
+      "signals": [
+        {
+          "kind": "inferred_signal",
+          "spell_ids": [
+            1287036
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "damage",
+            "applydebuff",
+            "removedebuff",
+            "cast"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "journal"
+          ],
+          "text": "Look for these candidate IDs in abilityGameID in an available participant death window. Validate event types and spell variants against actual evidence; absence in this window is not absence in the encounter."
+        }
+      ]
+    },
+    {
+      "id": "petrifying-sting",
+      "name": "Petrifying Sting",
+      "scope": {
+        "branch": "retail",
+        "difficulty": "heroic",
+        "build": "12.1.0.69587",
+        "live_hotfix_applicability": "unknown"
+      },
+      "fact": {
+        "kind": "source_statement",
+        "text": "On Heroic, Blightscale Vipers cast Petrifying Sting on players.",
+        "sources": [
+          "journal",
+          "difficulty"
+        ],
+        "journal_section_id": 37004,
+        "difficulty_association_id": 19123
+      },
+      "strategies": [
+        {
+          "kind": "strategy",
+          "origin": "author_recommendation",
+          "text": "Inspect the affected participant's aura and damage history; the linked spell alone does not establish avoidability.",
+          "sources": [
+            "journal"
+          ],
+          "build_applicability": "same_as_fact"
+        }
+      ],
+      "signals": [
+        {
+          "kind": "inferred_signal",
+          "spell_ids": [
+            1303414
+          ],
+          "id_namespace": "WoW Spell ID",
+          "candidate_event_types": [
+            "damage",
+            "applydebuff",
+            "removedebuff",
+            "cast"
+          ],
+          "verified_detection_rule": false,
+          "sources": [
+            "journal"
+          ],
+          "text": "Look for these candidate IDs in abilityGameID in an available participant death window. Validate event types and spell variants against actual evidence; absence in this window is not absence in the encounter."
+        }
+      ]
+    }
+  ],
+  "conflicts": [],
+  "knowledge_gaps": [
+    "Only three Heroic mechanic claims are covered; phases, numerical effects, timers and full strategy are not covered.",
+    "Source build is a snapshot, not proof of live server hotfix state or report applicability.",
+    "Detection signals are hypotheses; no live WCL mapping has been verified.",
+    "WCL currently supports participant death windows, not arbitrary full-raid mechanic queries.",
+    "Icy Veins exact build applicability and source redistribution permissions are not established.",
+    "Source conflicts outside the reviewed claims have not been exhaustively investigated."
+  ]
+}

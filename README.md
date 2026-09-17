@@ -4,7 +4,7 @@ Composable World of Warcraft skills for agents. Each skill provides one useful c
 
 ## Status
 
-Two vertical slices are implemented: `wcl-data` Report Index discovery and participant death-window queries, and independent `wow-localization` batch zhCN Spell ID lookup with build/source metadata and caching. Synthetic regressions and live source checks pass. WCL live multi-page retrieval and live cross-skill report composition remain unverified. Mechanics and the broader first-release scope remain planned.
+Three bounded vertical slices are implemented: `wcl-data` Report Index discovery and participant death windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with three sourced Heroic Ula'tek claims from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and live source checks pass. WCL live multi-page retrieval and live cross-skill report composition remain unverified. Full encounter mechanics and broader first-release capabilities remain outside these slices.
 
 ## Use wcl-data
 
@@ -51,6 +51,22 @@ python3 skills/wow-localization/scripts/wow_localization.py spells --input spell
 ```
 
 Join `names.json` for display only; do not rewrite `window.json`. WCL currently provides no known client build here, so do not infer build applicability from this composition. See [the localization skill](skills/wow-localization/SKILL.md) for the executable contract and [verification notes](docs/localization-verification.md) for live checks and limitations.
+
+## Use wow-mechanics
+
+Install the entire `skills/wow-mechanics/` directory. Python 3.11+ is required; no dependencies, network or WCL credentials are required for default snapshot queries.
+
+```bash
+python3 skills/wow-mechanics/scripts/wow_mechanics.py query ulatek \
+  --branch retail --difficulty heroic --patch 12.1
+# Exact reviewed build; optionally recheck fixed upstream sources:
+python3 skills/wow-mechanics/scripts/wow_mechanics.py query ulatek \
+  --branch retail --difficulty heroic --build 12.1.0.69587 --verify-sources
+```
+
+Patch-only queries deliberately return exit 1 / `degraded`: exact build applicability is unknown. They retain clearly scoped historical knowledge. Do not replace an unknown report build with the example build to suppress this warning. The snapshot covers only Spectral Coils/Soul Constrictor, Poisonous Bite and Petrifying Sting, not the complete encounter.
+
+For composition, an agent can use candidate signal IDs to inspect an existing `wcl-data death-window` result, then send observed Spell IDs to `wow-localization`. There is no new workflow command, general raid-event query, or evidence rewrite. See [the skill contract](skills/wow-mechanics/SKILL.md) and [source/verification notes](docs/mechanics-source-research.md).
 
 ## First release
 
