@@ -4,7 +4,7 @@ Composable World of Warcraft skills for agents. Each skill provides one useful c
 
 ## Status
 
-The first `wcl-data` vertical slice is implemented: Report Index discovery and participant death-window queries with provenance, pagination, and display metadata. Synthetic-response tests and authorized live Report Index/death-window checks pass. Live multi-page retrieval remains unverified. Other skills and the broader first-release scope remain planned.
+Two vertical slices are implemented: `wcl-data` Report Index discovery and participant death-window queries, and independent `wow-localization` batch zhCN Spell ID lookup with build/source metadata and caching. Synthetic regressions and live source checks pass. WCL live multi-page retrieval and live cross-skill report composition remain unverified. Mechanics and the broader first-release scope remain planned.
 
 ## Use wcl-data
 
@@ -22,6 +22,35 @@ Run the synthetic regression and standalone-entrypoint tests:
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## Use wow-localization
+
+No WCL credentials or report are needed. Requires Python 3.11+ with no third-party runtime dependencies. Install or copy the entire `skills/wow-localization/` directory.
+
+```bash
+python3 skills/wow-localization/scripts/wow_localization.py spells 17 116 --build 12.1.0.69587
+printf '[{"spell_id":17,"original_name":"Power Word: Shield"},{"spell_id":999999999,"original_name":"Unknown"}]' | \
+  python3 skills/wow-localization/scripts/wow_localization.py spells --input -
+```
+
+Names come from Wago Tools game-data CSV, with the actual build identified by the response filename. Omitting `--build` uses a cached/default upstream snapshot, not a promise of current Retail release data. `--refresh` explicitly refreshes the cache; failures and build mismatches remain visible. Missing names retain original names and IDs.
+
+To compose with an existing `wcl-data` death-window result saved as `window.json`, extract game Spell IDs into a separate input and preserve the original evidence file:
+
+```bash
+python3 - <<'PY' > spells.json
+import json
+from pathlib import Path
+window = json.loads(Path('window.json').read_text())
+ids = sorted({e['abilityGameID'] for e in window['events']
+              if type(e.get('abilityGameID')) is int and e['abilityGameID'] > 0})
+print(json.dumps([{'spell_id': spell_id} for spell_id in ids]))
+PY
+# Run only when spells.json contains at least one ID.
+python3 skills/wow-localization/scripts/wow_localization.py spells --input spells.json > names.json
+```
+
+Join `names.json` for display only; do not rewrite `window.json`. WCL currently provides no known client build here, so do not infer build applicability from this composition. See [the localization skill](skills/wow-localization/SKILL.md) for the executable contract and [verification notes](docs/localization-verification.md) for live checks and limitations.
 
 ## First release
 

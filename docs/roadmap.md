@@ -12,6 +12,12 @@ This document describes the first-release target, not a claim that all listed be
 
 The slice distinguishes window completeness from display truncation and whole-attempt coverage. It has no persistent cache, export, statistics, resume, or automatic retry support. Authorized live testing passed OAuth, Report Index discovery (two attempts), and a fight-2 death window (687 participant events, three displayed, explicit pagination termination, unchanged Revision). Live multi-page retrieval remains unverified. Regressions cover the special Environment actor `-1`, flexible raid difficulty size lists, regional report URLs, and existing credential variable names. Because actor expressions did not reliably match returned Report-local IDs, retrieval filters deaths by type upstream and actors locally; window retrieval includes all actors only within the requested time range and discloses that coverage. Review follow-up rejects malformed event actor/NPC identities and verifies that the selected death appears in the complete window before publishing evidence; regression tests and the authorized live window check pass after these changes. See [wcl-data instructions](../skills/wcl-data/SKILL.md) for the executable contract and supported source scope.
 
+### Localization slice
+
+`skills/wow-localization/` now provides an independently installable batch zhCN Spell ID command. It retains original names/IDs, identifies actual data builds from Wago response filenames, distinguishes missing/ambiguous names, exposes build mismatches and upstream failures, and caches validated snapshots with explicit refresh/fallback behavior. No WCL imports or credentials are required. This module owns only name resolution; callers retain source evidence separately.
+
+TDD command regressions, independent copied-skill execution, synthetic WCL Spell ID composition, and live Wago default/pinned-build queries and cache reuse pass. Live WCL-to-localization composition remains unverified. Default upstream builds are not asserted to be current Retail releases; snapshot completeness has no authoritative row-count guarantee. See [usage and result semantics](../skills/wow-localization/SKILL.md) and [source/reuse/verification notes](localization-verification.md).
+
 ## First release
 
 ### 1. wcl-data
