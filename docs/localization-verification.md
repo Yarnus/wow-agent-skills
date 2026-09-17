@@ -1,5 +1,7 @@
 # Localization slice verification
 
+Subsequent [authorized Ula'tek live verification](mechanics-live-verification.md) passed WCL-to-localization composition for three observed Spell IDs without modifying original evidence. The initial-slice limitations below are historical; report build applicability remains unknown.
+
 ## Design and reuse
 
 The public interface is one standalone `spells` command returning ordered name records. HTTP retrieval, CSV validation, build identification, ambiguity handling, and snapshot caching stay inside the module. Tests cross the command seam, substitute only external HTTP responses, and use real temporary cache directories. No shared framework or WCL adapter was introduced.

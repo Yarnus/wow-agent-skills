@@ -1,5 +1,7 @@
 # Mechanics source investigation and verification
 
+Subsequent [authorized live verification](mechanics-live-verification.md) passed three-skill composition and 42-page retrieval, observed three candidate IDs and confirmed the encounter ID for one report. The implementation-time limitations below are historical; report build and the fourth signal remain unverified.
+
 ## Approved scope and interface proposal
 
 Retail 12.1, Heroic Ula'tek (乌拉特克), eighth boss of The Venomous Abyss. Gnarlroot was an exploratory candidate rejected by the user. The implementation is a deliberately partial three-claim snapshot, not a complete encounter guide.

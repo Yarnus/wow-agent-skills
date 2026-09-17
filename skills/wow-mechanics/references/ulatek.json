@@ -227,7 +227,7 @@
   "knowledge_gaps": [
     "Only three Heroic mechanic claims are covered; phases, numerical effects, timers and full strategy are not covered.",
     "Source build is a snapshot, not proof of live server hotfix state or report applicability.",
-    "Detection signals are hypotheses; no live WCL mapping has been verified.",
+    "Detection rules remain hypotheses. In report pvQqzXGjykc1Rt8V, Revision 3, fight 2, actor 35, window [6446268, 7025007] ms, 1287265 damage and 1300685/1287036 debuff application/removal were observed; this does not establish causality or general detection validity. A separate full-fight filtered API probe returned no 1303414 events; its mapping remains unverified, not disproved.",
     "WCL currently supports participant death windows, not arbitrary full-raid mechanic queries.",
     "Icy Veins exact build applicability and source redistribution permissions are not established.",
     "Source conflicts outside the reviewed claims have not been exhaustively investigated."

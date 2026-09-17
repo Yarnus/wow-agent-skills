@@ -4,7 +4,7 @@ Composable World of Warcraft skills for agents. Each skill provides one useful c
 
 ## Status
 
-Three bounded vertical slices are implemented: `wcl-data` Report Index discovery and participant death windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with three sourced Heroic Ula'tek claims from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and live source checks pass. WCL live multi-page retrieval and live cross-skill report composition remain unverified. Full encounter mechanics and broader first-release capabilities remain outside these slices.
+Three bounded vertical slices are implemented: `wcl-data` Report Index discovery and participant death windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with three sourced Heroic Ula'tek claims from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and live source checks pass. Live multi-page retrieval and three-skill composition passed for one authorized Heroic Ula'tek participant window; see [live verification](docs/mechanics-live-verification.md). Full encounter mechanics and broader first-release capabilities remain outside these slices.
 
 ## Use wcl-data
 

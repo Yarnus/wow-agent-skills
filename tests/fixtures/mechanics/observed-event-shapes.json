@@ -1,0 +1,7 @@
+[
+  {"timestamp":2000,"type":"damage","sourceID":20,"sourceInstance":1,"targetID":10,"abilityGameID":1287265,"fight":7,"amount":143245,"absorbed":166816},
+  {"timestamp":3000,"type":"applydebuff","sourceID":20,"sourceInstance":2,"targetID":10,"abilityGameID":1300685,"fight":7},
+  {"timestamp":4000,"type":"removedebuff","sourceID":20,"sourceInstance":2,"targetID":10,"abilityGameID":1300685,"fight":7},
+  {"timestamp":5000,"type":"applydebuff","sourceID":21,"sourceInstance":49,"targetID":10,"abilityGameID":1287036,"fight":7},
+  {"timestamp":6000,"type":"removedebuff","sourceID":21,"sourceInstance":49,"targetID":10,"abilityGameID":1287036,"fight":7}
+]

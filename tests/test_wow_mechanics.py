@@ -150,6 +150,42 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(names['results'][0]['spell_id'], 1300685)
         self.assertEqual(json.dumps(evidence, sort_keys=True), original)
 
+    def test_live_observations_do_not_promote_detection_or_build_applicability(self):
+        code, result = self.invoke(ARGS[:-2] + ['--patch', '12.1'])
+        self.assertEqual(code, 1)
+        self.assertEqual(result['applicability']['status'], 'unknown')
+        self.assertNotIn('no live WCL mapping has been verified', ' '.join(result['knowledge_gaps']))
+        self.assertTrue(all(not s['verified_detection_rule'] for m in result['mechanics'] for s in m['signals']))
+
+    def test_observed_event_shapes_survive_paginated_three_skill_composition(self):
+        from test_wcl_data import CommandTests as WclTests, report
+        from test_wow_localization import CommandTests as NameTests, Response
+        events = json.loads((Path(__file__).parent / 'fixtures/mechanics/observed-event-shapes.json').read_text())
+        metadata = report()
+        metadata['masterData']['actors'].append({'id': 21, 'gameID': 261874, 'name': 'Add', 'type': 'NPC'})
+        death = {'timestamp': 8000, 'type': 'death', 'targetID': 10}
+        def page(items, next_time=None):
+            return {'code': 'AbC123', 'revision': 2, 'events': {'data': items, 'nextPageTimestamp': next_time}}
+        code, evidence = WclTests().invoke(['death-window', 'AbC123', '--fight-id', '7', '--actor-id', '10'],
+            [metadata, {'code': 'AbC123', 'revision': 2}, page([death]),
+             page(events[:3], 5000), page(events[3:] + [death]), {'code': 'AbC123', 'revision': 2}])
+        self.assertEqual(code, 0)
+        self.assertEqual(evidence['events'], events + [death])
+        self.assertEqual(evidence['coverage']['event_pagination'], {'pages': 2, 'terminated_explicitly': True})
+        self.assertIsNone(evidence['applicability']['build'])
+        original = json.dumps(evidence, sort_keys=True)
+        _, knowledge = self.invoke(ARGS[:-2] + ['--patch', '12.1'])
+        candidates = {i for m in knowledge['mechanics'] for s in m['signals'] for i in s['spell_ids']}
+        observed = sorted({e['abilityGameID'] for e in evidence['events'] if e.get('abilityGameID') in candidates})
+        self.assertEqual(observed, [1287036, 1287265, 1300685])
+        with tempfile.TemporaryDirectory() as root:
+            code, names = NameTests().invoke(['spells', *map(str, observed), '--build', '12.1.0.69587', '--cache-dir', root],
+                Response('ID,Name_lang\n1287036,剧毒撕咬\n1287265,幽魂盘卷\n1300685,灵魂绞杀者\n'))
+        self.assertEqual(code, 0)
+        self.assertEqual([r['localized_name'] for r in names['results']], ['剧毒撕咬', '幽魂盘卷', '灵魂绞杀者'])
+        self.assertEqual(json.dumps(evidence, sort_keys=True), original)
+        self.assertEqual(knowledge['applicability']['status'], 'unknown')
+
     def test_supported_query_separates_knowledge_categories_without_wcl(self):
         code, result = self.invoke()
         self.assertEqual(code, 0)
