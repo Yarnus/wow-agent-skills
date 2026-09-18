@@ -4,7 +4,7 @@ Composable World of Warcraft skills for agents. Each skill provides one useful c
 
 ## Status
 
-Three bounded vertical slices are implemented: `wcl-data` Report Index and bounded participant death discovery/windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with six bounded Ula'tek knowledge entries for Heroic investigation from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and live source checks pass. Live multi-page retrieval and three-skill composition passed for one authorized Heroic Ula'tek participant window; see [live verification](docs/mechanics-live-verification.md). Full encounter mechanics and broader first-release capabilities remain outside these slices. Subsequent real acceptance exposed false death candidates from feigns and a blocked unknown-version mechanics query; see [P1 fixes and verification](docs/p1-acceptance-fixes.md).
+Three bounded vertical slices are implemented: `wcl-data` Report Index, bounded attempt event queries, and participant death discovery/windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with six bounded Ula'tek knowledge entries for Heroic investigation from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and historical live source checks pass. Historical live multi-page retrieval and three-skill composition passed for one authorized Heroic Ula'tek participant window; see [live verification](docs/mechanics-live-verification.md). The event command has synthetic command coverage and one post-implementation authorized bounded live acceptance run; this is not broad report coverage. Full encounter mechanics and broader first-release capabilities remain outside these slices. Subsequent real acceptance exposed false death candidates from feigns and a blocked unknown-version mechanics query; see [P1 fixes and verification](docs/p1-acceptance-fixes.md).
 
 ## Use wcl-data
 
@@ -12,12 +12,16 @@ Python 3.11+ is required; there are no third-party runtime dependencies. Configu
 
 ```bash
 python3 skills/wcl-data/scripts/wcl_data.py index REPORT
+python3 skills/wcl-data/scripts/wcl_data.py events REPORT --fight-id 7 \
+  --start-ms 1000 --end-ms 5000 --spell-id 1287265 --event-type damage
 python3 skills/wcl-data/scripts/wcl_data.py deaths REPORT --fight-id 7 --limit 100
 python3 skills/wcl-data/scripts/wcl_data.py death-window REPORT --fight-id 7 --actor-id 10 \
   --death 1 --expected-revision 2 --expected-death-timestamp 12000
 ```
 
 Install or copy the entire `skills/wcl-data/` directory as one independent skill. It contains its own script and license and does not import repository-root modules or the old project. See [the skill instructions](skills/wcl-data/SKILL.md) for selection, coverage, error semantics, and current limitations.
+
+`events` requires an explicit report-relative range and supports one optional Spell ID, one of four mechanics-oriented event types, and one attempt participant with source/target/either semantics. Filters are ANDed. Spell/type filtering is fixed and checked against returned events; participant filtering uses returned Report-local actor IDs locally. Fractional requested bounds are applied locally after an outward-rounded upstream query. Pagination and Revision checks complete before `--limit` truncates display; zero matches are a complete successful query, not an upstream error.
 
 Death discovery and window selection exclude explicit `feign=true` events before numbering. `deaths` returns all eligible participant deaths in chronological order, with per-actor ordinals and `death_classification`; `--limit` only truncates displayed records after pagination. Use the discovery result's Report Revision, timestamp and ordinal as the paired `death-window` guards. See the skill contract for malformed flags and `no_death` semantics.
 
@@ -74,7 +78,7 @@ python3 skills/wow-mechanics/scripts/wow_mechanics.py query ulatek \
 
 Unknown-version queries return exit 1 / `degraded` with `context_unknown` and null requested versions, retaining the actual snapshot build and sources. Patch-only queries deliberately return exit 1 / `degraded`: exact build applicability is unknown. They retain clearly scoped historical knowledge. Do not replace an unknown report build with the example build to suppress this warning. The snapshot covers Spectral Coils/Soul Constrictor, Poisonous Bite, Petrifying Sting, Falling Debris, Virulent Spit and Serpent's Bite / Volatile Purge, not the complete encounter. Entries include child effects and distinct spell variants; direct versus inherited/unknown difficulty support remains explicit. See [death-mechanics sources](docs/death-mechanics-source-research.md) and [bounded replay](docs/death-mechanics-verification.md).
 
-For composition, an agent can use candidate signal IDs to inspect an existing `wcl-data death-window` result, then send observed Spell IDs to `wow-localization`. There is no new workflow command, general raid-event query, or evidence rewrite. See [the skill contract](skills/wow-mechanics/SKILL.md) and [source/verification notes](docs/mechanics-source-research.md).
+For composition, an agent can use candidate signal IDs with a bounded `wcl-data events` query or inspect an existing `death-window`, then send observed Spell IDs to `wow-localization`. There is no workflow command, arbitrary query language, complete event export, or evidence rewrite. See [the skill contract](skills/wow-mechanics/SKILL.md) and [source/verification notes](docs/mechanics-source-research.md).
 
 ## First release
 

@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,342 @@ class CommandTests(unittest.TestCase):
             status = module.main(args)
         self.assertNotIn("secret-", output.getvalue())
         return status, json.loads(output.getvalue())
+
+    def test_events_returns_original_events_for_an_explicit_attempt_range(self):
+        revision = {"code": "AbC123", "revision": 2}
+        event = {"timestamp": 8000, "type": "damage", "sourceID": 20,
+                 "targetID": 10, "abilityGameID": 123}
+        page = revision | {"events": {"data": [event], "nextPageTimestamp": None}}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+             "--end-ms", "9000"],
+            [report(), revision, page, revision])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["identity"], {
+            "report_code": "AbC123", "report_revision": 2, "fight_id": 7})
+        self.assertEqual(result["events"], [event])
+        self.assertEqual(result["query"], {
+            "requested_range_ms": [7000.0, 9000.0],
+            "actual_range_ms": [7000.0, 9000.0],
+            "filters": {"spell_id": None, "event_type": None, "actor_id": None,
+                        "actor_role": None},
+        })
+        self.assertTrue(result["coverage"]["query_complete"])
+        self.assertEqual(result["coverage"]["event_pagination"], {
+            "pages": 1, "terminated_explicitly": True})
+        self.assertEqual(result["display"], {"matched": 1, "returned": 1, "truncated": False})
+
+    def test_events_clips_to_the_attempt_and_returns_complete_empty_matches(self):
+        revision = {"code": "AbC123", "revision": 2}
+        page = revision | {"events": {"data": [], "nextPageTimestamp": None}}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "0",
+             "--end-ms", "5000"],
+            [report(), revision, page, revision])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["events"], [])
+        self.assertEqual(result["query"]["requested_range_ms"], [0.0, 5000.0])
+        self.assertEqual(result["query"]["actual_range_ms"], [1000, 5000.0])
+        self.assertTrue(result["coverage"]["query_complete"])
+        self.assertEqual(result["display"], {"matched": 0, "returned": 0, "truncated": False})
+
+    def test_events_completes_all_pages_before_truncating_display(self):
+        revision = {"code": "AbC123", "revision": 2}
+        first = {"timestamp": 8000, "type": "damage", "targetID": 10}
+        second = {"timestamp": 8200, "type": "damage", "targetID": 10}
+        page_one = revision | {"events": {"data": [first], "nextPageTimestamp": 8100}}
+        page_two = revision | {"events": {"data": [second], "nextPageTimestamp": None}}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+             "--end-ms", "9000", "--limit", "1"],
+            [report(), revision, page_one, page_two, revision])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(result["events"], [first])
+        self.assertEqual(result["coverage"]["event_pagination"], {
+            "pages": 2, "terminated_explicitly": True})
+        self.assertEqual(result["display"], {"matched": 2, "returned": 1, "truncated": True})
+
+    def test_events_accepts_closed_intersections_at_attempt_boundaries(self):
+        revision = {"code": "AbC123", "revision": 2}
+        cases = [("0", "1000", 1000), ("20000", "21000", 20000)]
+        for start, end, timestamp in cases:
+            with self.subTest(start=start, end=end):
+                event = {"timestamp": timestamp, "type": "damage", "targetID": 10}
+                page = revision | {"events": {"data": [event], "nextPageTimestamp": None}}
+                status, result = self.invoke(
+                    ["events", "AbC123", "--fight-id", "7", "--start-ms", start,
+                     "--end-ms", end],
+                    [report(), revision, page, revision])
+                self.assertEqual(status, 0)
+                self.assertEqual(result["query"]["actual_range_ms"], [timestamp, timestamp])
+                self.assertEqual(result["events"], [event])
+
+    def test_events_rejects_a_range_outside_the_attempt_before_event_retrieval(self):
+        revision = {"code": "AbC123", "revision": 2}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "20001",
+             "--end-ms", "21000"],
+            [report(), revision])
+
+        self.assertEqual(status, 1)
+        self.assertIn("overlap", result["error"])
+        self.assertFalse(result["coverage"]["query_complete"])
+        self.assertEqual([r for r in self.requests if "filterExpression" in r["variables"]], [])
+
+    def test_events_expected_revision_mismatch_prevents_event_retrieval(self):
+        revision = {"code": "AbC123", "revision": 2}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+             "--end-ms", "9000", "--expected-revision", "3"],
+            [report(), revision])
+
+        self.assertEqual(status, 1)
+        self.assertIn("Revision", result["error"])
+        self.assertFalse(result["coverage"]["query_complete"])
+        self.assertEqual([r for r in self.requests if "filterExpression" in r["variables"]], [])
+
+    def test_events_uses_widened_upstream_range_and_exact_fractional_local_bounds(self):
+        revision = {"code": "AbC123", "revision": 2}
+        inside = [
+            {"timestamp": 7000.25, "type": "damage", "targetID": 10},
+            {"timestamp": 9000.75, "type": "damage", "targetID": 10},
+        ]
+        page = revision | {"events": {"data": [
+            {"timestamp": 7000, "type": "damage", "targetID": 10},
+            *inside,
+            {"timestamp": 9001, "type": "damage", "targetID": 10},
+        ], "nextPageTimestamp": None}}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000.25",
+             "--end-ms", "9000.75"],
+            [report(), revision, page, revision])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(result["events"], inside)
+        self.assertEqual(result["query"]["actual_range_ms"], [7000.25, 9000.75])
+        self.assertEqual(result["coverage"]["upstream_range_ms"], [7000, 9001])
+        event_request = next(r for r in self.requests if "filterExpression" in r["variables"])
+        self.assertEqual(event_request["variables"]["startTime"], 7000)
+        self.assertEqual(event_request["variables"]["endTime"], 9001)
+
+    def test_events_returns_resolvable_actor_identities_and_warns_for_unknown_ids(self):
+        revision = {"code": "AbC123", "revision": 2}
+        event = {"timestamp": 8000, "type": "damage", "sourceID": 99,
+                 "targetID": 10, "abilityGameID": 123}
+        page = revision | {"events": {"data": [event], "nextPageTimestamp": None}}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+             "--end-ms", "9000"],
+            [report(), revision, page, revision])
+
+        self.assertEqual(status, 0)
+        self.assertEqual([actor["actor_id"] for actor in result["actors"]], [10])
+        self.assertEqual(result["warnings"], ["Some event actor IDs have no master-data identity."])
+
+    def test_events_checks_spell_filter_matches_across_the_widened_upstream_range(self):
+        revision = {"code": "AbC123", "revision": 2}
+        fringe_mismatch = {"timestamp": 7000, "type": "damage", "targetID": 10,
+                           "abilityGameID": 456}
+        page = revision | {"events": {"data": [fringe_mismatch], "nextPageTimestamp": None}}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000.25",
+             "--end-ms", "9000.75", "--spell-id", "123"],
+            [report(), revision, page, revision])
+
+        self.assertEqual(status, 1)
+        self.assertIn("Spell filter", result["error"])
+        self.assertFalse(result["coverage"]["query_complete"])
+        self.assertNotIn("events", result)
+
+    def test_events_rejects_spell_filter_mismatches_without_publishing_evidence(self):
+        revision = {"code": "AbC123", "revision": 2}
+        for event in [
+            {"timestamp": 8000, "type": "damage", "targetID": 10},
+            {"timestamp": 8000, "type": "damage", "targetID": 10, "abilityGameID": 456},
+        ]:
+            with self.subTest(event=event):
+                page = revision | {"events": {"data": [event], "nextPageTimestamp": None}}
+                status, result = self.invoke(
+                    ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+                     "--end-ms", "9000", "--spell-id", "123"],
+                    [report(), revision, page])
+                self.assertEqual(status, 1)
+                self.assertIn("Spell filter", result["error"])
+                self.assertFalse(result["coverage"]["query_complete"])
+                self.assertNotIn("events", result)
+
+    def test_index_rejects_an_oversized_inconsistent_report_time_as_a_structured_error(self):
+        data = report()
+        data["startTime"] = 10 ** 400
+
+        status, result = self.invoke(["index", "AbC123"], [data])
+
+        self.assertEqual(status, 1)
+        self.assertEqual(result["status"], "error")
+        self.assertFalse(result["coverage"]["query_complete"])
+
+    def test_events_rejects_oversized_upstream_numbers_as_structured_errors(self):
+        revision = {"code": "AbC123", "revision": 2}
+        huge = 10 ** 400
+        pages = [
+            {"data": [{"timestamp": huge, "type": "damage", "targetID": 10}],
+             "nextPageTimestamp": None},
+            {"data": [], "nextPageTimestamp": huge},
+        ]
+        for event_page in pages:
+            with self.subTest(event_page=event_page):
+                page = revision | {"events": event_page}
+                status, result = self.invoke(
+                    ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+                     "--end-ms", "9000"],
+                    [report(), revision, page])
+                self.assertEqual(status, 1)
+                self.assertFalse(result["coverage"]["query_complete"])
+                self.assertNotIn("events", result)
+
+    def test_events_rejects_malformed_spell_identity_without_publishing_evidence(self):
+        revision = {"code": "AbC123", "revision": 2}
+        malformed = {"timestamp": 8000, "type": "damage", "sourceID": 20,
+                     "targetID": 10, "abilityGameID": "123"}
+        page = revision | {"events": {"data": [malformed], "nextPageTimestamp": None}}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+             "--end-ms", "9000", "--spell-id", "123"],
+            [report(), revision, page])
+
+        self.assertEqual(status, 1)
+        self.assertIn("ability", result["error"])
+        self.assertFalse(result["coverage"]["query_complete"])
+        self.assertNotIn("events", result)
+
+    def test_events_actor_role_selects_only_the_requested_direction(self):
+        revision = {"code": "AbC123", "revision": 2}
+        sourced = {"timestamp": 8000, "type": "cast", "sourceID": 10,
+                   "targetID": 20, "abilityGameID": 123}
+        targeted = {"timestamp": 8100, "type": "cast", "sourceID": 20,
+                    "targetID": 10, "abilityGameID": 123}
+        page = revision | {"events": {"data": [sourced, targeted], "nextPageTimestamp": None}}
+
+        for role, expected in [("source", [sourced]), ("target", [targeted])]:
+            with self.subTest(role=role):
+                status, result = self.invoke(
+                    ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+                     "--end-ms", "9000", "--actor-id", "10", "--actor-role", role],
+                    [report(), revision, page, revision])
+                self.assertEqual(status, 0)
+                self.assertEqual(result["events"], expected)
+                self.assertEqual(result["query"]["filters"]["actor_role"], role)
+
+    def test_events_conjoins_spell_type_and_local_participant_either_filter(self):
+        revision = {"code": "AbC123", "revision": 2}
+        matched = [
+            {"timestamp": 8000, "type": "damage", "sourceID": 20,
+             "targetID": 10, "abilityGameID": 123},
+            {"timestamp": 8100, "type": "damage", "sourceID": 10,
+             "targetID": 20, "abilityGameID": 123},
+        ]
+        unrelated = {"timestamp": 8200, "type": "damage", "sourceID": 20,
+                     "targetID": 20, "abilityGameID": 123}
+        page = revision | {"events": {"data": matched + [unrelated], "nextPageTimestamp": None}}
+
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+             "--end-ms", "9000", "--spell-id", "123", "--event-type", "damage",
+             "--actor-id", "10"],
+            [report(), revision, page, revision])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(result["events"], matched)
+        self.assertEqual(result["query"]["filters"], {
+            "spell_id": 123, "event_type": "damage", "actor_id": 10,
+            "actor_role": "either"})
+        self.assertEqual(result["coverage"]["upstream_filter"],
+                         "type = 'damage' AND ability.id = 123")
+        self.assertEqual(result["coverage"]["actor_filter"],
+                         "local sourceID or targetID")
+        event_requests = [r for r in self.requests if "filterExpression" in r["variables"]]
+        self.assertEqual([r["variables"]["filterExpression"] for r in event_requests],
+                         ["type = 'damage' AND ability.id = 123"])
+
+    def test_events_rejects_invalid_selectors_before_network_requests(self):
+        base = ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+                "--end-ms", "9000"]
+        invalid = [
+            ["--fight-id", "0"], ["--start-ms", "nan"], ["--end-ms", "inf"],
+            ["--start-ms", "-1"], ["--start-ms", "9000"], ["--end-ms", "7000"],
+            ["--spell-id", "0"], ["--actor-id", "0"], ["--actor-role", "source"],
+            ["--expected-revision", "0"], ["--limit", "-1"],
+        ]
+        for extra in invalid:
+            with self.subTest(extra=extra):
+                status, result = self.invoke(base + extra, [])
+                self.assertEqual(status, 1)
+                self.assertEqual(result["status"], "error")
+                self.assertFalse(result["coverage"]["query_complete"])
+                self.assertEqual(self.requests, [])
+
+    def test_events_rejects_nonparticipant_actor_before_event_retrieval(self):
+        revision = {"code": "AbC123", "revision": 2}
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+             "--end-ms", "9000", "--actor-id", "20"],
+            [report(), revision])
+        self.assertEqual(status, 1)
+        self.assertIn("participant", result["error"])
+        self.assertEqual([r for r in self.requests if "filterExpression" in r["variables"]], [])
+
+    def test_events_upstream_failure_after_a_page_discards_partial_evidence(self):
+        revision = {"code": "AbC123", "revision": 2}
+        event = {"timestamp": 8000, "type": "damage", "targetID": 10}
+        page = revision | {"events": {"data": [event], "nextPageTimestamp": 8100}}
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+             "--end-ms", "9000"],
+            [report(), revision, page, OSError("private upstream body")])
+        self.assertEqual(status, 1)
+        self.assertFalse(result["coverage"]["query_complete"])
+        self.assertNotIn("events", result)
+
+    def test_events_revision_changes_during_or_after_pagination_prevent_success(self):
+        revision = {"code": "AbC123", "revision": 2}
+        changed = {"code": "AbC123", "revision": 3}
+        event = {"timestamp": 8000, "type": "damage", "targetID": 10}
+        page = revision | {"events": {"data": [event], "nextPageTimestamp": None}}
+        for replies in ([report(), revision, page | {"revision": 3}],
+                        [report(), revision, page, changed]):
+            with self.subTest(replies=replies):
+                status, result = self.invoke(
+                    ["events", "AbC123", "--fight-id", "7", "--start-ms", "7000",
+                     "--end-ms", "9000"], replies)
+                self.assertEqual(status, 1)
+                self.assertIn("Revision", result["error"])
+                self.assertFalse(result["coverage"]["query_complete"])
+                self.assertNotIn("events", result)
+
+    def test_events_separates_whole_attempt_coverage_from_complete_bundle(self):
+        revision = {"code": "AbC123", "revision": 2}
+        page = revision | {"events": {"data": [], "nextPageTimestamp": None}}
+        status, result = self.invoke(
+            ["events", "AbC123", "--fight-id", "7", "--start-ms", "0",
+             "--end-ms", "21000"],
+            [report(), revision, page, revision])
+        self.assertEqual(status, 0)
+        self.assertTrue(result["coverage"]["whole_attempt_events"])
+        self.assertFalse(result["coverage"]["complete_bundle"])
 
     def test_deaths_discovers_all_participant_deaths_once_and_truncates_display(self):
         data = report()
@@ -451,12 +788,22 @@ class CommandTests(unittest.TestCase):
 
     def test_independent_script_entrypoint_help_and_missing_credentials(self):
         with tempfile.TemporaryDirectory() as cwd:
+            copied_skill = Path(cwd) / "wcl-data"
+            shutil.copytree(SCRIPT.parent.parent, copied_skill)
+            copied_script = copied_skill / "scripts/wcl_data.py"
             env = {k: v for k, v in os.environ.items() if not k.startswith("WCL_")}
-            help_result = subprocess.run([sys.executable, str(SCRIPT), "--help"], cwd=cwd,
+            help_result = subprocess.run([sys.executable, str(copied_script), "--help"], cwd=cwd,
                                          env=env, capture_output=True, text=True)
             self.assertEqual(help_result.returncode, 0)
+            self.assertIn("events", help_result.stdout)
             self.assertIn("death-window", help_result.stdout)
-            missing = subprocess.run([sys.executable, str(SCRIPT), "index", "AbC123"], cwd=cwd,
+            unsupported_type = subprocess.run([
+                sys.executable, str(copied_script), "events", "AbC123", "--fight-id", "7",
+                "--start-ms", "7000", "--end-ms", "9000", "--event-type", "heal"],
+                cwd=cwd, env=env, capture_output=True, text=True)
+            self.assertEqual(unsupported_type.returncode, 2)
+            self.assertIn("invalid choice", unsupported_type.stderr)
+            missing = subprocess.run([sys.executable, str(copied_script), "index", "AbC123"], cwd=cwd,
                                      env=env, capture_output=True, text=True)
             self.assertEqual(missing.returncode, 1)
             self.assertEqual(json.loads(missing.stdout)["status"], "error")

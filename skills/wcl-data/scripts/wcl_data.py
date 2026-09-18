@@ -36,6 +36,8 @@ query ScopedEvents($code: String!, $fightIDs: [Int], $startTime: Float!, $endTim
   } }
 }
 """
+EVENT_TYPES = {"damage", "cast", "applydebuff", "removedebuff"}
+
 REVISION_QUERY = """
 query ReportRevision($code: String!) {
   reportData { report(code: $code, allowUnlisted: true) { code revision } }
@@ -172,10 +174,10 @@ def index(client, code):
 
 
 def finite_number(value):
-    return type(value) in (int, float) and math.isfinite(value)
+    return type(value) is int or (type(value) is float and math.isfinite(value))
 
 
-def pages(client, identity, fight_id, start, end, expression):
+def pages(client, identity, fight_id, start, end, expression, event_type=None):
     events = []
     count = 0
     cursor = start
@@ -197,11 +199,14 @@ def pages(client, identity, fight_id, start, end, expression):
             for key in ("sourceID", "targetID"):
                 if key in event and type(event[key]) is not int:
                     raise DataError("Malformed event actor ID.")
+            if ("abilityGameID" in event and (type(event["abilityGameID"]) is not int
+                                               or event["abilityGameID"] < 0)):
+                raise DataError("Malformed event ability game ID.")
             if event["type"] == "death" and type(event.get("targetID")) is not int:
                 raise DataError("Death event is missing its target actor ID.")
             if event["type"] == "death" and "feign" in event and type(event["feign"]) is not bool:
                 raise DataError("Malformed death event feign flag; expected a boolean when present.")
-            matches = not expression or event["type"] == "death"
+            matches = event_type is None or event["type"] == event_type
             if not matches or (events and event["timestamp"] < events[-1]["timestamp"]):
                 raise DataError("Event identity/filter mismatch or unordered events.")
             events.append(event)
@@ -249,7 +254,7 @@ def death_window(client, code, args):
     result["participant"] = player
     result["source"]["url"] += f"#fight={args.fight_id}&source={args.actor_id}"
     deaths, death_pagination = pages(client, result["identity"], args.fight_id, fight["start_ms"],
-                                    fight["end_ms"], "type = 'death'")
+                                    fight["end_ms"], "type = 'death'", "death")
     deaths, classification = classify_deaths(deaths, {args.actor_id})
     result["death_classification"] = classification
     result["deaths"] = [{"death": i + 1, "timestamp": event["timestamp"]}
@@ -304,6 +309,79 @@ def death_window(client, code, args):
     return result
 
 
+def events_report(client, code, args):
+    result = index(client, code)
+    if (args.expected_revision is not None
+            and result["identity"]["report_revision"] != args.expected_revision):
+        raise DataError("Expected Report Revision does not match the retrieved report.")
+    fight = next((f for f in result["attempts"] if f["fight_id"] == args.fight_id), None)
+    if fight is None:
+        raise DataError("Fight ID does not identify a supported Boss Attempt.")
+    requested = [args.start_ms, args.end_ms]
+    actual = [max(fight["start_ms"], requested[0]), min(fight["end_ms"], requested[1])]
+    if actual[0] > actual[1]:
+        raise DataError("Requested range does not overlap the Boss Attempt.")
+    result.pop("attempts")
+    result["identity"]["fight_id"] = args.fight_id
+    result["attempt"] = fight
+    result["source"]["url"] += f"#fight={args.fight_id}"
+    actor_role = args.actor_role or ("either" if args.actor_id is not None else None)
+    if args.actor_id is not None and not any(
+            participant["actor_id"] == args.actor_id for participant in fight["participants"]):
+        raise DataError("Actor ID is not a participant of this Boss Attempt.")
+    filters = []
+    if args.event_type is not None:
+        filters.append(f"type = '{args.event_type}'")
+    if args.spell_id is not None:
+        filters.append(f"ability.id = {args.spell_id}")
+    expression = " AND ".join(filters)
+    upstream_range = [math.floor(actual[0]), math.ceil(actual[1])]
+    events, pagination = pages(client, result["identity"], args.fight_id, *upstream_range,
+                               expression, args.event_type)
+    if args.spell_id is not None and any(
+            event.get("abilityGameID") != args.spell_id for event in events):
+        raise DataError("Spell filter did not match returned ability game IDs.")
+    events = [event for event in events if actual[0] <= event["timestamp"] <= actual[1]]
+    if args.actor_id is not None:
+        if actor_role == "source":
+            events = [event for event in events if event.get("sourceID") == args.actor_id]
+        elif actor_role == "target":
+            events = [event for event in events if event.get("targetID") == args.actor_id]
+        else:
+            events = [event for event in events if args.actor_id in (
+                event.get("sourceID"), event.get("targetID"))]
+    check_revision(client, code, result["identity"]["report_revision"])
+    result["events"] = events[:args.limit]
+    referenced = {args.actor_id} if args.actor_id is not None else set()
+    for event in result["events"]:
+        referenced.update(event.get(key) for key in ("sourceID", "targetID")
+                          if event.get(key) is not None)
+    result["actors"] = [actor for actor in result["actors"] if actor["actor_id"] in referenced]
+    result["warnings"] = (["Some event actor IDs have no master-data identity."]
+                          if referenced - {actor["actor_id"] for actor in result["actors"]} else [])
+    result["query"] = {
+        "requested_range_ms": requested,
+        "actual_range_ms": actual,
+        "filters": {"spell_id": args.spell_id, "event_type": args.event_type,
+                    "actor_id": args.actor_id, "actor_role": actor_role},
+    }
+    result["coverage"] = {
+        "scope": "bounded_attempt_events", "upstream_range_ms": upstream_range,
+        "upstream_filter": expression or None, "local_filter": "report-relative timestamp",
+        "event_pagination": pagination, "query_complete": True,
+        "revision_consistent": True,
+        "whole_attempt_events": (actual == [fight["start_ms"], fight["end_ms"]]
+                                 and not any((args.spell_id, args.event_type, args.actor_id))),
+        "complete_bundle": False,
+    }
+    if args.actor_id is not None:
+        result["coverage"]["actor_filter"] = (
+            "local sourceID or targetID" if actor_role == "either" else f"local {actor_role}ID")
+    result["display"] = {"matched": len(events), "returned": len(result["events"]),
+                         "truncated": len(events) > args.limit}
+    return result
+
+
 def deaths_report(client, code, args):
     result = index(client, code)
     fight = next((f for f in result["attempts"] if f["fight_id"] == args.fight_id), None)
@@ -315,7 +393,7 @@ def deaths_report(client, code, args):
     result["source"]["url"] += f"#fight={args.fight_id}"
     participant_ids = {participant["actor_id"] for participant in fight["participants"]}
     events, death_pagination = pages(client, result["identity"], args.fight_id, fight["start_ms"],
-                                     fight["end_ms"], "type = 'death'")
+                                     fight["end_ms"], "type = 'death'", "death")
     deaths, classification = classify_deaths(events, participant_ids)
     check_revision(client, code, result["identity"]["report_revision"])
     result["actors"] = [actor for actor in result["actors"] if actor["actor_id"] in participant_ids]
@@ -338,6 +416,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("index").add_argument("report")
+    events = commands.add_parser("events")
+    events.add_argument("report")
+    events.add_argument("--fight-id", type=int, required=True)
+    events.add_argument("--start-ms", type=float, required=True)
+    events.add_argument("--end-ms", type=float, required=True)
+    events.add_argument("--spell-id", type=int)
+    events.add_argument("--event-type", choices=sorted(EVENT_TYPES))
+    events.add_argument("--actor-id", type=int)
+    events.add_argument("--actor-role", choices=("source", "target", "either"))
+    events.add_argument("--expected-revision", type=int)
+    events.add_argument("--limit", type=int, default=100)
     deaths = commands.add_parser("deaths")
     deaths.add_argument("report")
     deaths.add_argument("--fight-id", type=int, required=True)
@@ -355,7 +444,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         code = report_code(args.report)
-        if args.command == "deaths":
+        if args.command == "events":
+            if (args.fight_id <= 0 or args.limit < 0 or not finite_number(args.start_ms)
+                    or not finite_number(args.end_ms) or args.start_ms < 0
+                    or args.start_ms >= args.end_ms or (args.spell_id is not None and args.spell_id <= 0)
+                    or (args.actor_id is not None and args.actor_id <= 0)
+                    or (args.expected_revision is not None and args.expected_revision <= 0)
+                    or (args.actor_role is not None and args.actor_id is None)):
+                raise DataError("Fight ID must be positive; range must be finite, nonnegative and increasing; limit must be nonnegative.")
+        elif args.command == "deaths":
             if args.fight_id <= 0 or args.limit < 0:
                 raise DataError("Fight ID must be positive and limit must be nonnegative.")
         elif args.command == "death-window":
@@ -374,6 +471,8 @@ def main(argv=None):
         client = Client()
         if args.command == "index":
             result = index(client, code)
+        elif args.command == "events":
+            result = events_report(client, code, args)
         elif args.command == "deaths":
             result = deaths_report(client, code, args)
         else:
