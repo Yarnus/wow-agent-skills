@@ -59,6 +59,191 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn("secret-", output.getvalue())
         return status, json.loads(output.getvalue())
 
+    def test_deaths_discovers_all_participant_deaths_once_and_truncates_display(self):
+        data = report()
+        data["masterData"]["actors"].append({
+            "id": 11, "gameID": 0, "name": "Beta", "server": "Realm",
+            "type": "Player", "subType": "Mage"})
+        data["fights"][0]["friendlyPlayers"] = [10, 11]
+        revision = {"code": "AbC123", "revision": 2}
+        def page(events, cursor):
+            return revision | {"events": {"data": events, "nextPageTimestamp": cursor}}
+        events = [
+            {"timestamp": 8000, "type": "death", "targetID": 10, "feign": True},
+            {"timestamp": 9000, "type": "death", "targetID": 11, "feign": False},
+            {"timestamp": 10000, "type": "death", "targetID": 10},
+            {"timestamp": 11000, "type": "death", "targetID": 10, "feign": False},
+            {"timestamp": 12000, "type": "death", "targetID": 20},
+            {"timestamp": 13000, "type": "death", "targetID": 11, "feign": False},
+        ]
+        status, result = self.invoke(
+            ["deaths", "AbC123", "--fight-id", "7", "--limit", "2"],
+            [data, revision, page(events[:3], 10500), page(events[3:], None), revision])
+        self.assertEqual(status, 0)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["identity"], {
+            "report_code": "AbC123", "report_revision": 2, "fight_id": 7})
+        self.assertEqual(result["attempt"]["participants"], [
+            {"actor_id": 10, "name": "Alpha", "server": "Realm", "class": "Priest"},
+            {"actor_id": 11, "name": "Beta", "server": "Realm", "class": "Mage"},
+        ])
+        self.assertEqual(result["deaths"], [
+            {"actor_id": 11, "death": 1, "timestamp": 9000},
+            {"actor_id": 10, "death": 1, "timestamp": 10000},
+        ])
+        self.assertEqual(result["death_classification"], {
+            "candidate_count": 4, "excluded_feign_count": 1,
+            "missing_feign_count": 1, "policy": "exclude_explicit_true"})
+        self.assertEqual(result["display"], {"matched": 4, "returned": 2, "truncated": True})
+        self.assertEqual(result["coverage"]["scope"], "participant_deaths")
+        self.assertTrue(result["coverage"]["query_complete"])
+        self.assertEqual(result["coverage"]["death_pagination"], {
+            "pages": 2, "terminated_explicitly": True})
+        self.assertFalse(result["coverage"]["whole_attempt_events"])
+        self.assertFalse(result["coverage"]["complete_bundle"])
+        death_requests = [r for r in self.requests if "filterExpression" in r["variables"]]
+        self.assertEqual(len(death_requests), 2)
+        self.assertEqual({r["variables"]["filterExpression"] for r in death_requests}, {"type = 'death'"})
+
+    def test_deaths_reports_no_death_after_filtering_explicit_feigns(self):
+        revision = {"code": "AbC123", "revision": 2}
+        page = revision | {"events": {"data": [
+            {"timestamp": 8000, "type": "death", "targetID": 10, "feign": True}],
+            "nextPageTimestamp": None}}
+        status, result = self.invoke(
+            ["deaths", "AbC123", "--fight-id", "7"],
+            [report(), revision, page, revision])
+        self.assertEqual(status, 0)
+        self.assertEqual(result["status"], "no_death")
+        self.assertEqual(result["deaths"], [])
+        self.assertEqual(result["death_classification"], {
+            "candidate_count": 0, "excluded_feign_count": 1,
+            "missing_feign_count": 0, "policy": "exclude_explicit_true"})
+        self.assertEqual(result["display"], {"matched": 0, "returned": 0, "truncated": False})
+        self.assertTrue(result["coverage"]["query_complete"])
+
+    def test_deaths_rejects_unsupported_fight_and_invalid_upstream_death_fields(self):
+        for extra in [["--fight-id", "99"], ["--fight-id", "7", "--limit", "-1"]]:
+            with self.subTest(extra=extra):
+                status, result = self.invoke(["deaths", "AbC123"] + extra, [report(),
+                    {"code": "AbC123", "revision": 2}])
+                self.assertEqual(status, 1)
+                self.assertEqual(result["status"], "error")
+                self.assertFalse(result["coverage"]["query_complete"])
+        revision = {"code": "AbC123", "revision": 2}
+        def page(event):
+            return revision | {"events": {"data": [event], "nextPageTimestamp": None}}
+        for field, value in [("targetID", "10"), ("targetID", True), ("targetID", None),
+                             ("feign", "true"), ("feign", 1), ("feign", None)]:
+            with self.subTest(field=field, value=value):
+                event = {"timestamp": 8000, "type": "death", "targetID": 10}
+                event[field] = value
+                status, result = self.invoke(
+                    ["deaths", "AbC123", "--fight-id", "7"],
+                    [report(), revision, page(event)])
+                self.assertEqual(status, 1)
+                self.assertEqual(result["status"], "error")
+                self.assertNotIn("deaths", result)
+                self.assertFalse(result["coverage"]["query_complete"])
+
+    def test_deaths_rejects_revision_changes_during_and_after_paginated_search(self):
+        revision = {"code": "AbC123", "revision": 2}
+        changed = {"code": "AbC123", "revision": 3}
+        death = {"timestamp": 8000, "type": "death", "targetID": 10}
+        page = revision | {"events": {"data": [death], "nextPageTimestamp": None}}
+        for replies in [
+            [report(), revision, page | {"revision": 3}],
+            [report(), revision, page, changed],
+        ]:
+            with self.subTest(replies=replies):
+                status, result = self.invoke(
+                    ["deaths", "AbC123", "--fight-id", "7"], replies)
+                self.assertEqual(status, 1)
+                self.assertIn("Revision", result["error"])
+                self.assertNotIn("deaths", result)
+                self.assertFalse(result["coverage"]["query_complete"])
+
+    def test_guard_syntax_and_values_are_rejected_without_network_requests(self):
+        base = ["death-window", "AbC123", "--fight-id", "7", "--actor-id", "10"]
+        for extra in [
+            ["--expected-revision", "2"],
+            ["--expected-death-timestamp", "8000"],
+            ["--expected-revision", "2", "--expected-death-timestamp", "8000"],
+            ["--death", "1", "--expected-revision", "0", "--expected-death-timestamp", "8000"],
+            ["--death", "1", "--expected-revision", "2", "--expected-death-timestamp", "-1"],
+        ]:
+            with self.subTest(extra=extra):
+                status, result = self.invoke(base + extra, [])
+                self.assertEqual(status, 1)
+                self.assertEqual(result["status"], "error")
+                self.assertEqual(self.requests, [])
+
+    def test_guarded_window_rejects_revision_mismatch_before_death_search(self):
+        revision = {"code": "AbC123", "revision": 2}
+        status, result = self.invoke(
+            ["death-window", "AbC123", "--fight-id", "7", "--actor-id", "10", "--death", "1",
+             "--expected-revision", "3", "--expected-death-timestamp", "8000"],
+            [report(), revision])
+        self.assertEqual(status, 1)
+        self.assertIn("Revision", result["error"])
+        self.assertEqual([r for r in self.requests if "filterExpression" in r["variables"]], [])
+
+    def test_guarded_window_rejects_stale_timestamp_before_event_window_and_never_falls_back(self):
+        revision = {"code": "AbC123", "revision": 2}
+        def page(events):
+            return revision | {"events": {"data": events, "nextPageTimestamp": None}}
+        candidates = [
+            {"timestamp": 8000, "type": "death", "targetID": 10},
+            {"timestamp": 12000, "type": "death", "targetID": 10},
+        ]
+        status, result = self.invoke(
+            ["death-window", "AbC123", "--fight-id", "7", "--actor-id", "10", "--death", "1",
+             "--expected-revision", "2", "--expected-death-timestamp", "12000"],
+            [report(), revision, page(candidates), revision])
+        self.assertEqual(status, 1)
+        self.assertIn("timestamp", result["error"])
+        self.assertEqual([r for r in self.requests if "filterExpression" in r["variables"]], [
+            self.requests[2]])
+
+    def test_guarded_window_rejects_missing_candidate_without_fallback(self):
+        revision = {"code": "AbC123", "revision": 2}
+        page = revision | {"events": {"data": [], "nextPageTimestamp": None}}
+        status, result = self.invoke(
+            ["death-window", "AbC123", "--fight-id", "7", "--actor-id", "10", "--death", "1",
+             "--expected-revision", "2", "--expected-death-timestamp", "8000"],
+            [report(), revision, page, revision])
+        self.assertEqual(status, 1)
+        self.assertIn("ordinal", result["error"])
+        self.assertNotIn("events", result)
+
+    def test_guarded_window_checks_revision_between_discovery_and_window(self):
+        revision = {"code": "AbC123", "revision": 2}
+        changed = {"code": "AbC123", "revision": 3}
+        death = {"timestamp": 8000, "type": "death", "targetID": 10}
+        page = revision | {"events": {"data": [death], "nextPageTimestamp": None}}
+        status, result = self.invoke(
+            ["death-window", "AbC123", "--fight-id", "7", "--actor-id", "10", "--death", "1",
+             "--expected-revision", "2", "--expected-death-timestamp", "8000"],
+            [report(), revision, page, changed])
+        self.assertEqual(status, 1)
+        self.assertIn("Revision", result["error"])
+        self.assertEqual([r for r in self.requests if "filterExpression" in r["variables"]], [
+            self.requests[2]])
+
+    def test_guarded_window_uses_the_discovered_identity_and_timestamp(self):
+        revision = {"code": "AbC123", "revision": 2}
+        death = {"timestamp": 8000, "type": "death", "targetID": 10}
+        page = revision | {"events": {"data": [death], "nextPageTimestamp": None}}
+        status, result = self.invoke(
+            ["death-window", "AbC123", "--fight-id", "7", "--actor-id", "10", "--death", "1",
+             "--expected-revision", "2", "--expected-death-timestamp", "8000"],
+            [report(), revision, page, revision, page, revision])
+        self.assertEqual(status, 0)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["identity"]["report_revision"], 2)
+        self.assertEqual(result["death"]["timestamp"], 8000)
+        self.assertEqual(result["events"], [death])
+
     def test_observed_feign_is_excluded_before_automatic_death_selection(self):
         deaths = json.loads((Path(__file__).parent / 'fixtures/wcl/death-classification.json').read_text())
         def page(events):

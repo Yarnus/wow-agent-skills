@@ -211,8 +211,32 @@ def pages(client, identity, fight_id, start, end, expression):
         cursor = next_cursor
 
 
+def classify_deaths(events, actor_ids=None):
+    if actor_ids is not None:
+        events = [event for event in events if event.get("targetID") in actor_ids]
+    excluded_feign = sum(event.get("feign") is True for event in events)
+    missing_feign = sum("feign" not in event for event in events)
+    candidates = [event for event in events if event.get("feign") is not True]
+    return candidates, {
+        "candidate_count": len(candidates), "excluded_feign_count": excluded_feign,
+        "missing_feign_count": missing_feign, "policy": "exclude_explicit_true"}
+
+
+def death_records(events):
+    ordinals = {}
+    records = []
+    for event in events:
+        actor_id = event["targetID"]
+        ordinals[actor_id] = ordinals.get(actor_id, 0) + 1
+        records.append({"actor_id": actor_id, "death": ordinals[actor_id],
+                        "timestamp": event["timestamp"]})
+    return records
+
+
 def death_window(client, code, args):
     result = index(client, code)
+    if args.expected_revision is not None and result["identity"]["report_revision"] != args.expected_revision:
+        raise DataError("Expected Report Revision does not match the retrieved report.")
     fight = next((f for f in result["attempts"] if f["fight_id"] == args.fight_id), None)
     if fight is None:
         raise DataError("Fight ID does not identify a supported Boss Attempt.")
@@ -226,16 +250,18 @@ def death_window(client, code, args):
     result["source"]["url"] += f"#fight={args.fight_id}&source={args.actor_id}"
     deaths, death_pagination = pages(client, result["identity"], args.fight_id, fight["start_ms"],
                                     fight["end_ms"], "type = 'death'")
-    deaths = [event for event in deaths if event.get("targetID") == args.actor_id]
-    excluded_feign = sum(event.get("feign") is True for event in deaths)
-    missing_feign = sum("feign" not in event for event in deaths)
-    deaths = [event for event in deaths if event.get("feign") is not True]
-    result["death_classification"] = {
-        "candidate_count": len(deaths), "excluded_feign_count": excluded_feign,
-        "missing_feign_count": missing_feign, "policy": "exclude_explicit_true"}
-    result["deaths"] = [{"death": i + 1, "timestamp": event["timestamp"]} for i, event in enumerate(deaths)]
-    if not deaths or (len(deaths) > 1 and args.death is None):
+    deaths, classification = classify_deaths(deaths, {args.actor_id})
+    result["death_classification"] = classification
+    result["deaths"] = [{"death": i + 1, "timestamp": event["timestamp"]}
+                         for i, event in enumerate(deaths)]
+    guarded = args.expected_revision is not None
+    if guarded:
         check_revision(client, code, result["identity"]["report_revision"])
+        if not deaths:
+            raise DataError("Expected death ordinal does not identify a candidate; refusing fallback.")
+    if not deaths or (len(deaths) > 1 and args.death is None):
+        if not guarded:
+            check_revision(client, code, result["identity"]["report_revision"])
         result["status"] = "no_death" if not deaths else "needs_selection"
         result["coverage"] = {"scope": "participant_deaths", "death_pagination": death_pagination,
                               "death_search_scope": "all_actor_deaths", "actor_filter": "local targetID",
@@ -244,7 +270,11 @@ def death_window(client, code, args):
                               "whole_attempt_events": False, "complete_bundle": False}
         result["display"] = {"matched": len(deaths), "returned": len(deaths), "truncated": False}
         return result
+    if args.death is not None and args.death > len(deaths):
+        raise DataError("Death ordinal does not identify a candidate death.")
     selected = deaths[(args.death or 1) - 1]
+    if guarded and selected["timestamp"] != args.expected_death_timestamp:
+        raise DataError("Selected death timestamp does not match the expected timestamp.")
     requested = [selected["timestamp"] - args.before_ms, selected["timestamp"] + args.after_ms]
     actual = [max(fight["start_ms"], requested[0]), min(fight["end_ms"], requested[1])]
     events, pagination = pages(client, result["identity"], args.fight_id, *actual, "")
@@ -274,10 +304,44 @@ def death_window(client, code, args):
     return result
 
 
+def deaths_report(client, code, args):
+    result = index(client, code)
+    fight = next((f for f in result["attempts"] if f["fight_id"] == args.fight_id), None)
+    if fight is None:
+        raise DataError("Fight ID does not identify a supported Boss Attempt.")
+    result.pop("attempts")
+    result["identity"]["fight_id"] = args.fight_id
+    result["attempt"] = fight
+    result["source"]["url"] += f"#fight={args.fight_id}"
+    participant_ids = {participant["actor_id"] for participant in fight["participants"]}
+    events, death_pagination = pages(client, result["identity"], args.fight_id, fight["start_ms"],
+                                     fight["end_ms"], "type = 'death'")
+    deaths, classification = classify_deaths(events, participant_ids)
+    check_revision(client, code, result["identity"]["report_revision"])
+    result["actors"] = [actor for actor in result["actors"] if actor["actor_id"] in participant_ids]
+    result["death_classification"] = classification
+    result["deaths"] = death_records(deaths)
+    result["status"] = "ok" if deaths else "no_death"
+    result["coverage"] = {"scope": "participant_deaths", "death_pagination": death_pagination,
+                          "death_search_scope": "all_actor_deaths",
+                          "actor_filter": "local targetID against attempt participants",
+                          "death_search_window_ms": [fight["start_ms"], fight["end_ms"]],
+                          "query_complete": True, "revision_consistent": True,
+                          "whole_attempt_events": False, "complete_bundle": False}
+    result["display"] = {"matched": len(deaths), "returned": min(len(deaths), args.limit),
+                         "truncated": len(deaths) > args.limit}
+    result["deaths"] = result["deaths"][:args.limit]
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("index").add_argument("report")
+    deaths = commands.add_parser("deaths")
+    deaths.add_argument("report")
+    deaths.add_argument("--fight-id", type=int, required=True)
+    deaths.add_argument("--limit", type=int, default=100)
     window = commands.add_parser("death-window")
     window.add_argument("report")
     window.add_argument("--fight-id", type=int, required=True)
@@ -286,15 +350,33 @@ def main(argv=None):
     window.add_argument("--before-ms", type=int, default=10000)
     window.add_argument("--after-ms", type=int, default=5000)
     window.add_argument("--limit", type=int, default=100)
+    window.add_argument("--expected-revision", type=int)
+    window.add_argument("--expected-death-timestamp", type=int)
     args = parser.parse_args(argv)
     try:
         code = report_code(args.report)
-        if args.command == "death-window" and (
-                args.fight_id <= 0 or args.actor_id <= 0 or (args.death is not None and args.death <= 0)
-                or min(args.before_ms, args.after_ms, args.limit) < 0):
-            raise DataError("IDs/death ordinal must be positive; window sizes and limit must be nonnegative.")
+        if args.command == "deaths":
+            if args.fight_id <= 0 or args.limit < 0:
+                raise DataError("Fight ID must be positive and limit must be nonnegative.")
+        elif args.command == "death-window":
+            if (args.fight_id <= 0 or args.actor_id <= 0
+                    or (args.death is not None and args.death <= 0)
+                    or min(args.before_ms, args.after_ms, args.limit) < 0):
+                raise DataError("IDs/death ordinal must be positive; window sizes and limit must be nonnegative.")
+            if (args.expected_revision is None) != (args.expected_death_timestamp is None):
+                raise DataError("Expected Revision and death timestamp must be supplied together.")
+            if args.expected_revision is not None and (
+                    args.expected_revision <= 0 or args.expected_death_timestamp < 0):
+                raise DataError("Expected Revision must be positive and death timestamp nonnegative.")
+            if (args.expected_revision is not None and args.death is None):
+                raise DataError("An explicit death ordinal is required with expected identity guards.")
         client = Client()
-        result = index(client, code) if args.command == "index" else death_window(client, code, args)
+        if args.command == "index":
+            result = index(client, code)
+        elif args.command == "deaths":
+            result = deaths_report(client, code, args)
+        else:
+            result = death_window(client, code, args)
         output = json.dumps(result, ensure_ascii=False, allow_nan=False)
     except DataError as exc:
         print(json.dumps({"status": "error", "error": str(exc), "coverage": {"query_complete": False}}))

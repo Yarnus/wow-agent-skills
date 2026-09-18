@@ -4,7 +4,7 @@ Composable World of Warcraft skills for agents. Each skill provides one useful c
 
 ## Status
 
-Three bounded vertical slices are implemented: `wcl-data` Report Index discovery and participant death windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with six bounded Ula'tek knowledge entries for Heroic investigation from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and live source checks pass. Live multi-page retrieval and three-skill composition passed for one authorized Heroic Ula'tek participant window; see [live verification](docs/mechanics-live-verification.md). Full encounter mechanics and broader first-release capabilities remain outside these slices. Subsequent real acceptance exposed false death candidates from feigns and a blocked unknown-version mechanics query; see [P1 fixes and verification](docs/p1-acceptance-fixes.md).
+Three bounded vertical slices are implemented: `wcl-data` Report Index and bounded participant death discovery/windows; independent `wow-localization` batch zhCN Spell ID lookup; and `wow-mechanics` with six bounded Ula'tek knowledge entries for Heroic investigation from build 12.1.0.69587, separate strategies/signals, and optional source rechecks. Synthetic regressions and live source checks pass. Live multi-page retrieval and three-skill composition passed for one authorized Heroic Ula'tek participant window; see [live verification](docs/mechanics-live-verification.md). Full encounter mechanics and broader first-release capabilities remain outside these slices. Subsequent real acceptance exposed false death candidates from feigns and a blocked unknown-version mechanics query; see [P1 fixes and verification](docs/p1-acceptance-fixes.md).
 
 ## Use wcl-data
 
@@ -12,12 +12,14 @@ Python 3.11+ is required; there are no third-party runtime dependencies. Configu
 
 ```bash
 python3 skills/wcl-data/scripts/wcl_data.py index REPORT
-python3 skills/wcl-data/scripts/wcl_data.py death-window REPORT --fight-id 7 --actor-id 10
+python3 skills/wcl-data/scripts/wcl_data.py deaths REPORT --fight-id 7 --limit 100
+python3 skills/wcl-data/scripts/wcl_data.py death-window REPORT --fight-id 7 --actor-id 10 \
+  --death 1 --expected-revision 2 --expected-death-timestamp 12000
 ```
 
 Install or copy the entire `skills/wcl-data/` directory as one independent skill. It contains its own script and license and does not import repository-root modules or the old project. See [the skill instructions](skills/wcl-data/SKILL.md) for selection, coverage, error semantics, and current limitations.
 
-Death candidates exclude explicit `feign=true` events before numbering and selection. Inspect `death_classification` for eligible, excluded-feign and missing-flag counts; original window events remain unchanged. See the skill contract for malformed flags and `no_death` semantics.
+Death discovery and window selection exclude explicit `feign=true` events before numbering. `deaths` returns all eligible participant deaths in chronological order, with per-actor ordinals and `death_classification`; `--limit` only truncates displayed records after pagination. Use the discovery result's Report Revision, timestamp and ordinal as the paired `death-window` guards. See the skill contract for malformed flags and `no_death` semantics.
 
 Run the synthetic regression and standalone-entrypoint tests:
 
