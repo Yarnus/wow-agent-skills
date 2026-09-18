@@ -163,6 +163,28 @@ class CommandTests(unittest.TestCase):
                 self.assertNotIn("deaths", result)
                 self.assertFalse(result["coverage"]["query_complete"])
 
+    def test_fractional_discovery_timestamp_round_trips_into_guarded_window(self):
+        revision = {"code": "AbC123", "revision": 2}
+        death = {"timestamp": 8000.5, "type": "death", "targetID": 10}
+        page = revision | {"events": {"data": [death], "nextPageTimestamp": None}}
+        status, discovery = self.invoke(
+            ["deaths", "AbC123", "--fight-id", "7"],
+            [report(), revision, page, revision])
+        self.assertEqual(status, 0)
+        selected = discovery["deaths"][0]
+        self.assertEqual(selected["timestamp"], 8000.5)
+        identity = discovery["identity"]
+        status, window = self.invoke(
+            ["death-window", identity["report_code"], "--fight-id", str(identity["fight_id"]),
+             "--actor-id", str(selected["actor_id"]), "--death", str(selected["death"]),
+             "--expected-revision", str(identity["report_revision"]),
+             "--expected-death-timestamp", str(selected["timestamp"])],
+            [report(), revision, page, revision, page, revision])
+        self.assertEqual(status, 0)
+        self.assertEqual(window["status"], "ok")
+        self.assertEqual(window["death"], death)
+        self.assertEqual(window["events"], [death])
+
     def test_guard_syntax_and_values_are_rejected_without_network_requests(self):
         base = ["death-window", "AbC123", "--fight-id", "7", "--actor-id", "10"]
         for extra in [
@@ -176,6 +198,18 @@ class CommandTests(unittest.TestCase):
                 status, result = self.invoke(base + extra, [])
                 self.assertEqual(status, 1)
                 self.assertEqual(result["status"], "error")
+                self.assertEqual(self.requests, [])
+
+    def test_guard_rejects_nonfinite_and_negative_fractional_timestamps_before_network(self):
+        for timestamp in ["nan", "inf", "-inf", "1e999", "-0.5"]:
+            with self.subTest(timestamp=timestamp):
+                status, result = self.invoke(
+                    ["death-window", "AbC123", "--fight-id", "7", "--actor-id", "10",
+                     "--death", "1", "--expected-revision", "2",
+                     "--expected-death-timestamp=" + timestamp], [])
+                self.assertEqual(status, 1)
+                self.assertEqual(result["status"], "error")
+                self.assertIn("timestamp", result["error"])
                 self.assertEqual(self.requests, [])
 
     def test_guarded_window_rejects_revision_mismatch_before_death_search(self):

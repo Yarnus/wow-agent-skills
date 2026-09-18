@@ -351,7 +351,7 @@ def main(argv=None):
     window.add_argument("--after-ms", type=int, default=5000)
     window.add_argument("--limit", type=int, default=100)
     window.add_argument("--expected-revision", type=int)
-    window.add_argument("--expected-death-timestamp", type=int)
+    window.add_argument("--expected-death-timestamp", type=float)
     args = parser.parse_args(argv)
     try:
         code = report_code(args.report)
@@ -366,8 +366,9 @@ def main(argv=None):
             if (args.expected_revision is None) != (args.expected_death_timestamp is None):
                 raise DataError("Expected Revision and death timestamp must be supplied together.")
             if args.expected_revision is not None and (
-                    args.expected_revision <= 0 or args.expected_death_timestamp < 0):
-                raise DataError("Expected Revision must be positive and death timestamp nonnegative.")
+                    args.expected_revision <= 0 or not finite_number(args.expected_death_timestamp)
+                    or args.expected_death_timestamp < 0):
+                raise DataError("Expected Revision must be positive and death timestamp finite and nonnegative.")
             if (args.expected_revision is not None and args.death is None):
                 raise DataError("An explicit death ordinal is required with expected identity guards.")
         client = Client()
